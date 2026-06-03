@@ -1,0 +1,19 @@
+{
+  "framework": "vite",
+  "installCommand": "npm install",
+  "buildCommand": "npm run build:frontend",
+  "outputDirectory": "dist",
+  "routes": [
+    {
+      "src": "^/api/(.*)$",
+      "dest": "/api/[...path].ts?path=$1"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "^/(.*)$",
+      "dest": "/index.html"
+    }
+  ]
+}

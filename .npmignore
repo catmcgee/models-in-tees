@@ -4,14 +4,10 @@ dist-server/
 target/
 .vite/
 .venv/
-/private/
-/private*/
 .vercel/
-.turbo/
-.cache/
 .vercel_python_packages/
-
-# Local environment and credentials
+private/
+private*/
 .env
 .env.*
 !.env.example
@@ -19,12 +15,6 @@ target/
 *.key
 *.p8
 *.p12
-*.crt
-*.csr
-**/*keypair*.json
-target/deploy/*-keypair.json
-
-# Private model/data artifacts
 *.pt
 *.pth
 *.onnx
@@ -34,7 +24,5 @@ target/deploy/*-keypair.json
 *.sqlite
 *.sqlite3
 *.db
-
 *.log
 .DS_Store
-.vercel
