@@ -339,174 +339,170 @@ function App() {
           </button>
         </div>
 
-        <div className="hero-grid chat-layout">
-          <section className="chat-panel" aria-labelledby="experiment-title">
-            <div className="chat-intro">
-              <p className="eyebrow">Private chat demo</p>
-              <h1 id="experiment-title">Chat with GPT-2 without seeing its weights.</h1>
-              <p className="lead">
-                Imagine OpenAI wanted the public to test GPT-2 while keeping the
-                checkpoint private. Each answer comes back with a signed receipt
-                binding the prompt hash, output hash, model commitment, TEE
-                evidence, and optional Solana timestamp.
-              </p>
-            </div>
+        <section className="chat-panel chat-hero" aria-labelledby="experiment-title">
+          <div className="chat-intro">
+            <p className="eyebrow">Private chat demo</p>
+            <h1 id="experiment-title">Chat with GPT-2 without seeing its weights.</h1>
+            <p className="lead">
+              Imagine OpenAI wanted the public to test GPT-2 while keeping the
+              checkpoint private. Each answer comes back with a signed receipt
+              binding the prompt hash, output hash, model commitment, TEE
+              evidence, and optional Solana timestamp.
+            </p>
+          </div>
 
-            <div className="chat-window" aria-live="polite">
-              <article className="chat-message system-message">
-                <div className="chat-avatar">TEE</div>
-                <div className="chat-bubble">
-                  <strong>Private GPT-2 runner is the assistant.</strong>
-                  <p>
-                    The browser sends prompts to the TEE-backed API. The model
-                    weights stay off the frontend; the response and proof details
-                    appear together.
-                  </p>
-                </div>
-              </article>
+          <div className="chat-window" aria-live="polite">
+            <article className="chat-message system-message">
+              <div className="chat-avatar">TEE</div>
+              <div className="chat-bubble">
+                <strong>Private GPT-2 runner is the assistant.</strong>
+                <p>
+                  The browser sends prompts to the TEE-backed API. The model
+                  weights stay off the frontend; the response and proof details
+                  appear together.
+                </p>
+              </div>
+            </article>
 
-              {activeRecord ? (
-                <>
-                  <article className="chat-message user-message">
-                    <div className="chat-avatar">You</div>
-                    <div className="chat-bubble">
-                      <p>{activeRecord.prompt}</p>
-                    </div>
-                  </article>
+            {activeRecord ? (
+              <>
+                <article className="chat-message user-message">
+                  <div className="chat-avatar">You</div>
+                  <div className="chat-bubble">
+                    <p>{activeRecord.prompt}</p>
+                  </div>
+                </article>
 
-                  <article className="chat-message assistant-message">
-                    <div className="chat-avatar">GPT-2</div>
-                    <div className="chat-bubble">
-                      <p>{activeRecord.generation.output}</p>
-                      <div className="bubble-meta">
-                        <span>{activeRecord.generation.tokenCount.generated} tokens</span>
-                        <span>{formatMs(activeRecord.generation.latencyMs)}</span>
-                        <span>{shortHash(activeRecord.receipt.digest, 8)}</span>
-                      </div>
-                    </div>
-                  </article>
-                </>
-              ) : (
-                <article className="chat-message assistant-message muted-message">
+                <article className="chat-message assistant-message">
                   <div className="chat-avatar">GPT-2</div>
                   <div className="chat-bubble">
-                    <p>Pick a starter prompt or type your own message to create the first signed response.</p>
+                    <p>{activeRecord.generation.output}</p>
+                    <div className="bubble-meta">
+                      <span>{activeRecord.generation.tokenCount.generated} tokens</span>
+                      <span>{formatMs(activeRecord.generation.latencyMs)}</span>
+                      <span>{shortHash(activeRecord.receipt.digest, 8)}</span>
+                    </div>
                   </div>
                 </article>
-              )}
+              </>
+            ) : (
+              <article className="chat-message assistant-message muted-message">
+                <div className="chat-avatar">GPT-2</div>
+                <div className="chat-bubble">
+                  <p>Pick a starter prompt or type your own message to create the first signed response.</p>
+                </div>
+              </article>
+            )}
 
-              {busy === "Running GPT-2" && (
-                <article className="chat-message assistant-message">
-                  <div className="chat-avatar">
-                    <Loader2 className="spin" size={16} />
-                  </div>
-                  <div className="chat-bubble thinking-bubble">
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                </article>
-              )}
+            {busy === "Running GPT-2" && (
+              <article className="chat-message assistant-message">
+                <div className="chat-avatar">
+                  <Loader2 className="spin" size={16} />
+                </div>
+                <div className="chat-bubble thinking-bubble">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+              </article>
+            )}
+          </div>
+
+          <div className="preset-prompts" aria-label="Sample prompts">
+            {SAMPLE_PROMPTS.map((sample, index) => (
+              <button
+                type="button"
+                key={sample}
+                onClick={() => setPrompt(sample)}
+                className={prompt === sample ? "active" : ""}
+              >
+                Prompt {index + 1}
+              </button>
+            ))}
+          </div>
+
+          <form className="chat-composer" onSubmit={submitPrompt}>
+            <label className="composer-label" htmlFor="chat-prompt">
+              Message to private GPT-2
+            </label>
+            <textarea
+              id="chat-prompt"
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+              onKeyDown={handleComposerKeyDown}
+            />
+            <button
+              className="primary-button send-button"
+              type="submit"
+              disabled={!!busy || prompt.trim().length < 1}
+            >
+              <Send size={18} />
+              <span>Send</span>
+            </button>
+          </form>
+
+          <details className="sampling-controls">
+            <summary>
+              <SlidersHorizontal size={16} />
+              <span>Sampling controls</span>
+            </summary>
+            <div className="control-grid">
+              <label className="range-field">
+                <span>New tokens</span>
+                <strong>{maxNewTokens}</strong>
+                <input
+                  type="range"
+                  min={16}
+                  max={180}
+                  step={4}
+                  value={maxNewTokens}
+                  onChange={(event) => setMaxNewTokens(Number(event.target.value))}
+                />
+              </label>
+              <label className="range-field">
+                <span>Temperature</span>
+                <strong>{temperature.toFixed(2)}</strong>
+                <input
+                  type="range"
+                  min={0.1}
+                  max={1.5}
+                  step={0.05}
+                  value={temperature}
+                  onChange={(event) => setTemperature(Number(event.target.value))}
+                />
+              </label>
+              <label className="range-field">
+                <span>Top-p</span>
+                <strong>{topP.toFixed(2)}</strong>
+                <input
+                  type="range"
+                  min={0.1}
+                  max={1}
+                  step={0.05}
+                  value={topP}
+                  onChange={(event) => setTopP(Number(event.target.value))}
+                />
+              </label>
             </div>
+          </details>
 
-            <div className="preset-prompts" aria-label="Sample prompts">
-              {SAMPLE_PROMPTS.map((sample, index) => (
+          {records.length > 0 && (
+            <div className="recent-runs" aria-label="Recent signed responses">
+              <span>Recent receipts</span>
+              {records.slice(0, 3).map((record) => (
                 <button
                   type="button"
-                  key={sample}
-                  onClick={() => setPrompt(sample)}
-                  className={prompt === sample ? "active" : ""}
+                  key={record.id}
+                  className={record.id === activeRecord?.id ? "active" : ""}
+                  onClick={() => setActiveRecord(record)}
                 >
-                  Prompt {index + 1}
+                  <strong>{shortHash(record.receipt.digest, 6)}</strong>
+                  <small>{record.generation.tokenCount.generated} tokens</small>
                 </button>
               ))}
             </div>
-
-            <form className="chat-composer" onSubmit={submitPrompt}>
-              <label className="composer-label" htmlFor="chat-prompt">
-                Message to private GPT-2
-              </label>
-              <textarea
-                id="chat-prompt"
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-                onKeyDown={handleComposerKeyDown}
-              />
-              <button
-                className="primary-button send-button"
-                type="submit"
-                disabled={!!busy || prompt.trim().length < 1}
-              >
-                <Send size={18} />
-                <span>Send</span>
-              </button>
-            </form>
-
-            <details className="sampling-controls">
-              <summary>
-                <SlidersHorizontal size={16} />
-                <span>Sampling controls</span>
-              </summary>
-              <div className="control-grid">
-                <label className="range-field">
-                  <span>New tokens</span>
-                  <strong>{maxNewTokens}</strong>
-                  <input
-                    type="range"
-                    min={16}
-                    max={180}
-                    step={4}
-                    value={maxNewTokens}
-                    onChange={(event) => setMaxNewTokens(Number(event.target.value))}
-                  />
-                </label>
-                <label className="range-field">
-                  <span>Temperature</span>
-                  <strong>{temperature.toFixed(2)}</strong>
-                  <input
-                    type="range"
-                    min={0.1}
-                    max={1.5}
-                    step={0.05}
-                    value={temperature}
-                    onChange={(event) => setTemperature(Number(event.target.value))}
-                  />
-                </label>
-                <label className="range-field">
-                  <span>Top-p</span>
-                  <strong>{topP.toFixed(2)}</strong>
-                  <input
-                    type="range"
-                    min={0.1}
-                    max={1}
-                    step={0.05}
-                    value={topP}
-                    onChange={(event) => setTopP(Number(event.target.value))}
-                  />
-                </label>
-              </div>
-            </details>
-
-            {records.length > 0 && (
-              <div className="recent-runs" aria-label="Recent signed responses">
-                <span>Recent receipts</span>
-                {records.slice(0, 3).map((record) => (
-                  <button
-                    type="button"
-                    key={record.id}
-                    className={record.id === activeRecord?.id ? "active" : ""}
-                    onClick={() => setActiveRecord(record)}
-                  >
-                    <strong>{shortHash(record.receipt.digest, 6)}</strong>
-                    <small>{record.generation.tokenCount.generated} tokens</small>
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <ResultSummary record={activeRecord} verification={verification} busy={busy} />
-        </div>
+          )}
+        </section>
       </header>
 
       {error && (
@@ -670,64 +666,6 @@ function App() {
         </p>
       </section>
     </main>
-  );
-}
-
-function ResultSummary({
-  record,
-  verification,
-  busy
-}: {
-  record: GenerationRecord | null;
-  verification: VerificationState;
-  busy: string | null;
-}) {
-  if (!record) {
-    return (
-      <aside className="result-panel waiting">
-        <div className="result-icon">
-          {busy ? <Loader2 className="spin" size={24} /> : <ShieldCheck size={24} />}
-        </div>
-        <span className="section-kicker">Current result</span>
-        <h2>{busy || "Ready for GPT-2"}</h2>
-        <p>
-          No public weights are loaded in the browser. A run returns generated
-          text, hashes, TEE evidence, and a signed receipt.
-        </p>
-      </aside>
-    );
-  }
-
-  return (
-    <aside className="result-panel generate">
-      <div className="result-top">
-        <span className="section-kicker">Current result</span>
-        <VerificationBadge state={verification} />
-      </div>
-      <div className="verdict text-result">
-        <span>GPT-2 continuation</span>
-        <strong>{record.generation.tokenCount.generated} tokens</strong>
-      </div>
-      <p>{previewText(record.generation.output)}</p>
-      <div className="score-grid">
-        <div>
-          <span>Latency</span>
-          <strong>{formatMs(record.generation.latencyMs)}</strong>
-        </div>
-        <div>
-          <span>Prompt hash</span>
-          <strong>{shortHash(record.generation.promptHash, 7)}</strong>
-        </div>
-        <div>
-          <span>Temperature</span>
-          <strong>{record.generation.params.temperature.toFixed(2)}</strong>
-        </div>
-        <div>
-          <span>Top-p</span>
-          <strong>{record.generation.params.topP.toFixed(2)}</strong>
-        </div>
-      </div>
-    </aside>
   );
 }
 
@@ -942,11 +880,6 @@ function shortHash(value?: string, length = 12): string {
   if (!value) return "pending";
   if (value.length <= length * 2) return value;
   return `${value.slice(0, length)}...${value.slice(-length)}`;
-}
-
-function previewText(value: string): string {
-  const trimmed = value.trim().replace(/\s+/g, " ");
-  return trimmed.length > 280 ? `${trimmed.slice(0, 280)}...` : trimmed;
 }
 
 function formatMs(value?: number): string {
