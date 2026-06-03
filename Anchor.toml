@@ -1,0 +1,13 @@
+[features]
+seeds = false
+skip-lint = false
+
+[provider]
+cluster = "devnet"
+wallet = "private/solana/devnet-keypair.json"
+
+[programs.devnet]
+private_gpt_receipts = "Bvvhk5LPD9STKEpK2hFEfdTumf5qGTSJfFyn5W97XiuR"
+
+[scripts]
+test = "npm test"

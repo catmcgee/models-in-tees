@@ -46,7 +46,8 @@ NODE_ENV=production
 TEE_AI_ROOT=/opt/tee-ai
 TEE_MODE=gcp-confidential-vm-sev
 TEE_PROVIDER=google-confidential-vm
-TEE_ATTESTATION_AUDIENCE=tee-ai-private-benchmark
+TEE_ATTESTATION_AUDIENCE=tee-ai-private-gpt2
+TEE_AI_LLM_MODEL_ID=gpt2
 GOTPM_USE_SUDO=1
 PORT=8787
 ALLOW_MODEL_BOOTSTRAP=0
@@ -61,15 +62,13 @@ than running the whole API as root.
 ## Expected Checks
 
 - `/api/health` reports the configured TEE mode.
-- `/api/model` returns a private model commitment without serving weights.
+- `/api/llm` returns a private GPT-2 model commitment without serving weights.
+- `/api/generate` returns generated text and a signed receipt.
 - `/api/tee/evidence` returns a receipt-bindable evidence hash.
-- `/api/benchmark` returns signed receipts.
 - `/api/receipts/:id/audit` verifies receipt signature, evidence hash, workload
   hash, Google token signature, issuer, audience, nonce, validity window, AMD
   SEV hardware claim, and secure boot claim when Google attestation is present.
 - `/api/receipts/:id/commit` commits to the Solana devnet Anchor program.
-- `/api/receipts/:id/magicblock` delegates the session to MagicBlock devnet,
-  executes on the Ephemeral Rollup, and resolves the base-layer commit signature.
 
 ## Private Files
 
@@ -77,7 +76,8 @@ Keep these files on the VM only:
 
 ```text
 private/attestation/
-private/model/
+private/hf/
+private/llm/
 private/records/
 private/solana/
 .env

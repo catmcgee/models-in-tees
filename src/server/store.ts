@@ -1,29 +1,29 @@
-import type { BenchmarkRecord } from "./types.js";
+import type { StoredRecord } from "./types.js";
 import fs from "node:fs";
 import path from "node:path";
 import { privateDir } from "./config.js";
 
 const recordsDir = path.join(privateDir, "records");
-const recordsPath = path.join(recordsDir, "benchmark-records.json");
+const recordsPath = path.join(recordsDir, "gpt-records.json");
 const records = loadRecords();
 
-export function saveRecord(record: BenchmarkRecord): BenchmarkRecord {
+export function saveRecord<T extends StoredRecord>(record: T): T {
   records.set(record.id, record);
   persistRecords();
   return record;
 }
 
-export function getRecord(id: string): BenchmarkRecord | undefined {
+export function getRecord(id: string): StoredRecord | undefined {
   return records.get(id);
 }
 
-export function listRecords(): BenchmarkRecord[] {
+export function listRecords(): StoredRecord[] {
   return [...records.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-function loadRecords(): Map<string, BenchmarkRecord> {
+function loadRecords(): Map<string, StoredRecord> {
   try {
-    const parsed = JSON.parse(fs.readFileSync(recordsPath, "utf-8")) as BenchmarkRecord[];
+    const parsed = JSON.parse(fs.readFileSync(recordsPath, "utf-8")) as StoredRecord[];
     return new Map(parsed.map((record) => [record.id, record]));
   } catch {
     return new Map();

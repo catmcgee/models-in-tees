@@ -5,9 +5,9 @@
 The demo proves this local workflow:
 
 1. A private model version is represented by a SHA-256 commitment.
-2. Public benchmark cases are sent to the API.
-3. A private runner loads local weights from `private/model`.
-4. The runner returns predictions and aggregate metrics, not weights.
+2. Public prompts are sent to the API.
+3. A private runner loads GPT-2 files from `private/llm`.
+4. The runner returns generated text and run hashes, not weights.
 5. The API collects TEE evidence and binds its hash into the receipt payload.
 6. The API signs a canonical receipt with an Ed25519 runner key.
 7. The receipt can be verified later against the public key and payload digest.
@@ -15,8 +15,9 @@ The demo proves this local workflow:
 
 ## What Is Real
 
-- The neural network is a PyTorch transformer classifier.
-- The weights are saved outside the served source tree under `private/model`.
+- The public demo path uses a GPT-2 causal language model through
+  Hugging Face Transformers.
+- GPT-2 files are cached outside the served source tree under `private/llm`.
 - Receipts use deterministic canonical JSON hashing.
 - Receipts are signed with Ed25519.
 - The deployed GCP VM exposes Google Confidential VM attestation claims through
@@ -30,8 +31,6 @@ The demo proves this local workflow:
   including Google JWT signature verification against the Confidential Computing
   signer JWKS.
 - Solana devnet commits use a deployed Anchor program; Memo remains a fallback.
-- MagicBlock service status, ER RPC probes, delegation, ER execution, and commit
-  signature resolution use live devnet endpoints.
 
 ## What Is Still Limited
 
@@ -44,8 +43,8 @@ The demo proves this local workflow:
 - Google AMD SEV Confidential VM attestation proves the VM identity and measured
   boot claims. It does not by itself prove every Python/Node source file loaded
   at runtime unless those measurements are added to the attested workload policy.
-- MagicBlock Private ER permission accounts are not yet implemented. The demo
-  executes standard MagicBlock ER delegation against the deployed program.
+- The demo does not prove that GPT-2 weights are correct by revealing them. It
+  proves that a specific committed model runner signed a specific output.
 
 ## Production Upgrade Path
 
@@ -54,8 +53,7 @@ The demo proves this local workflow:
 3. Bind the model commitment, container image hash, and workload measurement into
    the Google attestation policy.
 4. Store the TEE evidence hash and receipt digest in the Solana program account.
-5. Add MagicBlock Private ER permission accounts for evaluator/operator/runner
-   roles.
+5. Add model provenance controls around checkpoint import, review, and rollback.
 
 ## What The Public Can Verify
 
@@ -64,7 +62,7 @@ Given a receipt, a verifier can check:
 - The payload was not modified after signing.
 - The payload digest matches the signed material.
 - The receipt references a stable model commitment.
-- The input set, output set, and metrics hashes match the payload.
+- The prompt, output, and sampling parameter hashes match the payload.
 - The receipt binds to a TEE evidence hash.
 - The stored evidence hash recomputes to the receipt-bound value.
 - The Google token, when present, has a valid RS256 signature, issuer, audience,

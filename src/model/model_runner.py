@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Private model runner for the benchmark demo.
+"""Private GPT runner for the TEE demo.
 
-The public API talks to this file as a subprocess. The weights live in
-private/model and are never returned over stdout.
+The public API talks to this file as a subprocess. GPT-2 files are cached under
+private/llm and are never returned over stdout.
 """
 
 from __future__ import annotations
@@ -10,21 +10,14 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import math
 import os
-import random
-import string
 import sys
 import time
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
-    import numpy as np
     import torch
-    from torch import nn
-    from torch.utils.data import DataLoader, Dataset
 except ModuleNotFoundError as exc:
     print(
         json.dumps(
@@ -40,467 +33,187 @@ except ModuleNotFoundError as exc:
 
 
 ROOT = Path(__file__).resolve().parents[2]
-MODEL_DIR = Path(os.environ.get("TEE_AI_MODEL_DIR", ROOT / "private" / "model"))
-MODEL_PATH = MODEL_DIR / "private_transformer.pt"
-META_PATH = MODEL_DIR / "model_meta.json"
+LLM_DIR = Path(os.environ.get("TEE_AI_LLM_DIR", ROOT / "private" / "llm"))
+HF_HOME = Path(os.environ.get("HF_HOME", ROOT / "private" / "hf"))
+LLM_MODEL_ID = os.environ.get("TEE_AI_LLM_MODEL_ID", "gpt2")
+os.environ.setdefault("HF_HOME", str(HF_HOME))
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
-LABELS = ["APPROVE", "REVIEW", "BLOCK", "INSUFFICIENT"]
-LABEL_TO_ID = {label: idx for idx, label in enumerate(LABELS)}
-MAX_LEN = 256
-D_MODEL = 96
-N_HEADS = 4
-N_LAYERS = 3
-D_FF = 224
-DROPOUT = 0.08
-VOCAB = ["<pad>", "<unk>"] + list(string.printable[:95])
-CHAR_TO_ID = {ch: idx for idx, ch in enumerate(VOCAB)}
-PAD_ID = CHAR_TO_ID["<pad>"]
-UNK_ID = CHAR_TO_ID["<unk>"]
-
-ARCHITECTURE = {
-    "family": "tiny-transformer-benchmark-classifier",
-    "d_model": D_MODEL,
-    "heads": N_HEADS,
-    "layers": N_LAYERS,
-    "feed_forward": D_FF,
-    "dropout": DROPOUT,
-    "max_len": MAX_LEN,
-    "labels": LABELS,
-    "input": "printable-ascii character tokens",
-    "pooling": "masked-mean",
+LLM_ARCHITECTURE = {
+    "family": "gpt2-causal-language-model",
+    "model_id": LLM_MODEL_ID,
+    "runtime": "huggingface-transformers",
+    "weights": "local-cache-private",
+    "input": "byte-pair encoding tokens",
+    "output": "autoregressive text generation",
 }
 
-
-def normalize_label(value: Any) -> Optional[str]:
-    if value is None:
-        return None
-    text = str(value).strip().upper().replace("-", "_").replace(" ", "_")
-    aliases = {
-        "PASS": "APPROVE",
-        "ALLOW": "APPROVE",
-        "OK": "APPROVE",
-        "ACCEPT": "APPROVE",
-        "ESCALATE": "REVIEW",
-        "NEEDS_REVIEW": "REVIEW",
-        "HUMAN_REVIEW": "REVIEW",
-        "DENY": "BLOCK",
-        "REJECT": "BLOCK",
-        "STOP": "BLOCK",
-        "UNKNOWN": "INSUFFICIENT",
-        "NOT_ENOUGH_INFO": "INSUFFICIENT",
-        "MISSING_INFO": "INSUFFICIENT",
-    }
-    text = aliases.get(text, text)
-    return text if text in LABEL_TO_ID else None
+_LLM_CACHE: Optional[Tuple[Any, Any]] = None
+_LLM_COMMITMENT: Optional[str] = None
 
 
-def encode(text: str) -> Tuple[torch.Tensor, torch.Tensor]:
-    trimmed = text.lower()[:MAX_LEN]
-    ids = [CHAR_TO_ID.get(ch, UNK_ID) for ch in trimmed]
-    mask = [1] * len(ids)
-    if len(ids) < MAX_LEN:
-        pad = MAX_LEN - len(ids)
-        ids.extend([PAD_ID] * pad)
-        mask.extend([0] * pad)
-    return torch.tensor(ids, dtype=torch.long), torch.tensor(mask, dtype=torch.bool)
+def load_llm() -> Tuple[Any, Any]:
+    global _LLM_CACHE
+    if _LLM_CACHE is not None:
+        return _LLM_CACHE
+
+    try:
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Missing GPT-2 dependency. Run: pip install -r requirements.txt"
+        ) from exc
+
+    LLM_DIR.mkdir(parents=True, exist_ok=True)
+    HF_HOME.mkdir(parents=True, exist_ok=True)
+    tokenizer = AutoTokenizer.from_pretrained(LLM_MODEL_ID, cache_dir=str(LLM_DIR))
+    model = AutoModelForCausalLM.from_pretrained(LLM_MODEL_ID, cache_dir=str(LLM_DIR))
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    model.eval()
+    _LLM_CACHE = (tokenizer, model)
+    return _LLM_CACHE
 
 
-class TinyBenchmarkTransformer(nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-        self.token_embedding = nn.Embedding(len(VOCAB), D_MODEL, padding_idx=PAD_ID)
-        self.position_embedding = nn.Embedding(MAX_LEN, D_MODEL)
-        layer = nn.TransformerEncoderLayer(
-            d_model=D_MODEL,
-            nhead=N_HEADS,
-            dim_feedforward=D_FF,
-            dropout=DROPOUT,
-            activation="gelu",
-            batch_first=True,
-            norm_first=True,
-        )
-        self.encoder = nn.TransformerEncoder(layer, num_layers=N_LAYERS)
-        self.norm = nn.LayerNorm(D_MODEL)
-        self.head = nn.Sequential(
-            nn.Linear(D_MODEL, D_MODEL),
-            nn.GELU(),
-            nn.Dropout(DROPOUT),
-            nn.Linear(D_MODEL, len(LABELS)),
-        )
-
-    def forward(self, tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        positions = torch.arange(tokens.size(1), device=tokens.device).unsqueeze(0)
-        hidden = self.token_embedding(tokens) + self.position_embedding(positions)
-        encoded = self.encoder(hidden, src_key_padding_mask=~mask.bool())
-        encoded = self.norm(encoded)
-        weights = mask.float().unsqueeze(-1)
-        pooled = (encoded * weights).sum(dim=1) / weights.sum(dim=1).clamp_min(1.0)
-        return self.head(pooled)
-
-
-@dataclass(frozen=True)
-class Sample:
-    prompt: str
-    label: str
-
-
-class BenchmarkDataset(Dataset):
-    def __init__(self, samples: Sequence[Sample]) -> None:
-        self.samples = list(samples)
-
-    def __len__(self) -> int:
-        return len(self.samples)
-
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        sample = self.samples[idx]
-        tokens, mask = encode(sample.prompt)
-        return tokens, mask, torch.tensor(LABEL_TO_ID[sample.label], dtype=torch.long)
-
-
-def make_synthetic_samples(
-    seed: int = 1337,
-    count_per_label: Optional[int] = None,
-) -> List[Sample]:
-    rng = random.Random(seed)
-    count_per_label = count_per_label or int(
-        os.environ.get("TEE_AI_TRAIN_COUNT_PER_LABEL", "240")
+def iter_llm_files() -> List[Path]:
+    if not LLM_DIR.exists():
+        return []
+    skipped = {".lock", ".tmp", ".incomplete"}
+    return sorted(
+        path
+        for path in LLM_DIR.rglob("*")
+        if path.is_file() and not any(str(path).endswith(suffix) for suffix in skipped)
     )
-    anchor_repeats = int(os.environ.get("TEE_AI_ANCHOR_REPEATS", "64"))
-    subjects = [
-        "vendor contract",
-        "support ticket",
-        "customer export",
-        "internal automation",
-        "research summary",
-        "analytics request",
-        "security exception",
-        "finance workflow",
-    ]
-    formats = [
-        "Classify this request: {body}.",
-        "Policy gate input: {body}.",
-        "Benchmark case: {body}. Return the control decision.",
-        "TEE eval prompt: {body}.",
-        "Risk review packet: {body}.",
-    ]
-    approve_terms = [
-        "uses public data",
-        "public data",
-        "contains no pii",
-        "no pii",
-        "budget is under threshold",
-        "matches an approved template",
-        "read only access",
-        "routine low risk change",
-        "signed by the data owner",
-    ]
-    review_terms = [
-        "ambiguous consent language",
-        "new vendor",
-        "cross border processing",
-        "regulated workflow",
-        "requires human approval",
-        "borderline privacy impact",
-        "unusual access pattern",
-    ]
-    block_terms = [
-        "asks for raw credentials",
-        "exports medical records",
-        "bypasses access controls",
-        "contains secret keys",
-        "requests malware behavior",
-        "exfiltrates customer data",
-        "ignores deletion policy",
-    ]
-    insufficient_terms = [
-        "missing data owner",
-        "no stated purpose",
-        "unknown destination",
-        "incomplete ticket",
-        "not enough context",
-        "unclear retention period",
-        "missing approval chain",
-    ]
-    all_terms = {
-        "APPROVE": approve_terms,
-        "REVIEW": review_terms,
-        "BLOCK": block_terms,
-        "INSUFFICIENT": insufficient_terms,
-    }
-    distractors = [
-        "sla is normal",
-        "team asks for fast turnaround",
-        "expected volume is medium",
-        "deadline is friday",
-        "owner says it is important",
-        "request came from a partner",
-    ]
-
-    samples: List[Sample] = []
-    for label, terms in all_terms.items():
-        for _ in range(count_per_label):
-            subject = rng.choice(subjects)
-            picked = rng.sample(terms, k=rng.randint(2, 3))
-            noise = rng.sample(distractors, k=rng.randint(0, 2))
-            body_parts = [subject] + picked + noise
-            rng.shuffle(body_parts)
-            body = "; ".join(body_parts)
-            prompt = rng.choice(formats).format(body=body)
-            samples.append(Sample(prompt=prompt, label=label))
-
-    for _ in range(anchor_repeats):
-        for item in default_selftest_cases():
-            samples.append(Sample(prompt=str(item["prompt"]), label=str(item["expected"])))
-
-    rng.shuffle(samples)
-    return samples
 
 
-def set_seed(seed: int) -> None:
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
+def llm_commitment() -> str:
+    global _LLM_COMMITMENT
+    if _LLM_COMMITMENT is not None:
+        return _LLM_COMMITMENT
+    load_llm()
+    digest = hashlib.sha256()
+    digest.update(json.dumps(LLM_ARCHITECTURE, sort_keys=True).encode("utf-8"))
+    files = iter_llm_files()
+    if not files:
+        digest.update(LLM_MODEL_ID.encode("utf-8"))
+    for file in files:
+        digest.update(str(file.relative_to(LLM_DIR)).encode("utf-8"))
+        digest.update(file.read_bytes())
+    _LLM_COMMITMENT = digest.hexdigest()
+    return _LLM_COMMITMENT
 
 
-def split_samples(samples: Sequence[Sample]) -> Tuple[List[Sample], List[Sample]]:
-    boundary = int(len(samples) * 0.82)
-    return list(samples[:boundary]), list(samples[boundary:])
-
-
-def train_model(force: bool = False) -> Dict[str, Any]:
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    if MODEL_PATH.exists() and META_PATH.exists() and not force:
-        return {"ok": True, "skipped": True, "info": model_info()}
-
-    set_seed(20260602)
-    samples = make_synthetic_samples()
-    train_samples, val_samples = split_samples(samples)
-    train_loader = DataLoader(BenchmarkDataset(train_samples), batch_size=48, shuffle=True)
-    val_loader = DataLoader(BenchmarkDataset(val_samples), batch_size=96)
-
-    model = TinyBenchmarkTransformer()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=2.5e-3, weight_decay=0.01)
-    criterion = nn.CrossEntropyLoss()
-
-    history: List[Dict[str, float]] = []
-    best_state: Optional[Dict[str, torch.Tensor]] = None
-    best_accuracy = -math.inf
-    best_loss = math.inf
-    max_epochs = int(os.environ.get("TEE_AI_TRAIN_EPOCHS", "10"))
-    for epoch in range(1, max_epochs + 1):
-        model.train()
-        losses = []
-        for tokens, mask, labels in train_loader:
-            optimizer.zero_grad(set_to_none=True)
-            logits = model(tokens, mask)
-            loss = criterion(logits, labels)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-            losses.append(float(loss.detach()))
-
-        val_acc, val_loss = evaluate_loader(model, val_loader, criterion)
-        history.append(
-            {
-                "epoch": float(epoch),
-                "train_loss": float(np.mean(losses)),
-                "val_loss": val_loss,
-                "val_accuracy": val_acc,
-            }
-        )
-        if val_acc > best_accuracy or (val_acc == best_accuracy and val_loss < best_loss):
-            best_accuracy = val_acc
-            best_loss = val_loss
-            best_state = {
-                name: tensor.detach().cpu().clone()
-                for name, tensor in model.state_dict().items()
-            }
-        if val_acc >= 0.98 and epoch >= 4:
-            break
-
-    if best_state is not None:
-        model.load_state_dict(best_state)
-
-    checkpoint = {
-        "state_dict": model.state_dict(),
-        "architecture": ARCHITECTURE,
-        "labels": LABELS,
-        "vocab": VOCAB,
-    }
-    torch.save(checkpoint, MODEL_PATH)
-    meta = {
-        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "architecture": ARCHITECTURE,
-        "training": {
-            "synthetic_samples": len(samples),
-            "history": history,
-            "selected_val_accuracy": best_accuracy,
-            "selected_val_loss": best_loss,
-            "seed": 20260602,
+def llm_info() -> Dict[str, Any]:
+    tokenizer, model = load_llm()
+    config = getattr(model, "config", None)
+    return {
+        "architecture": {
+            **LLM_ARCHITECTURE,
+            "n_layer": getattr(config, "n_layer", None),
+            "n_head": getattr(config, "n_head", None),
+            "n_embd": getattr(config, "n_embd", None),
+            "vocab_size": getattr(config, "vocab_size", None),
+            "context_window": getattr(config, "n_positions", None),
+        },
+        "commitment": llm_commitment(),
+        "weights_path": str(LLM_DIR.relative_to(ROOT)),
+        "weights_public": False,
+        "meta": {
+            "model_id": LLM_MODEL_ID,
+            "tokenizer": tokenizer.__class__.__name__,
+            "model": model.__class__.__name__,
+            "cache_files": len(iter_llm_files()),
         },
     }
-    META_PATH.write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
-    return {"ok": True, "skipped": False, "info": model_info()}
 
 
-def evaluate_loader(
-    model: TinyBenchmarkTransformer,
-    loader: DataLoader,
-    criterion: nn.Module,
-) -> Tuple[float, float]:
-    model.eval()
-    total = 0
-    correct = 0
-    losses = []
+def generate_text(payload: Dict[str, Any]) -> Dict[str, Any]:
+    tokenizer, model = load_llm()
+    prompt = str(payload.get("prompt", "")).strip()
+    if not prompt:
+        return {"ok": False, "error": "Prompt is required."}
+
+    max_new_tokens = clamp_int(payload.get("maxNewTokens"), 8, 180, 80)
+    temperature = clamp_float(payload.get("temperature"), 0.1, 1.5, 0.75)
+    top_p = clamp_float(payload.get("topP"), 0.1, 1.0, 0.92)
+    seed = payload.get("seed")
+    if seed is not None:
+        try:
+            torch.manual_seed(int(seed))
+        except (TypeError, ValueError):
+            pass
+
+    started = time.perf_counter()
+    inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=768)
     with torch.no_grad():
-        for tokens, mask, labels in loader:
-            logits = model(tokens, mask)
-            loss = criterion(logits, labels)
-            losses.append(float(loss))
-            predicted = logits.argmax(dim=-1)
-            correct += int((predicted == labels).sum())
-            total += labels.numel()
-    return correct / max(total, 1), float(np.mean(losses))
+        generated = model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            do_sample=True,
+            temperature=temperature,
+            top_p=top_p,
+            pad_token_id=tokenizer.eos_token_id,
+        )
+    decoded = tokenizer.decode(generated[0], skip_special_tokens=True)
+    output = decoded[len(prompt) :].strip() if decoded.startswith(prompt) else decoded.strip()
+    if not output:
+        output = decoded.strip()
+    latency_ms = (time.perf_counter() - started) * 1000.0
+    prompt_tokens = int(inputs["input_ids"].shape[-1])
+    generated_tokens = int(generated.shape[-1] - prompt_tokens)
+
+    return {
+        "ok": True,
+        "model": llm_info(),
+        "promptHash": sha256_hex(prompt.encode("utf-8")),
+        "output": output,
+        "outputHash": sha256_hex(output.encode("utf-8")),
+        "latencyMs": round(latency_ms, 3),
+        "tokenCount": {
+            "prompt": prompt_tokens,
+            "generated": max(generated_tokens, 0),
+        },
+        "params": {
+            "maxNewTokens": max_new_tokens,
+            "temperature": round(temperature, 3),
+            "topP": round(top_p, 3),
+        },
+    }
 
 
-def load_model() -> TinyBenchmarkTransformer:
-    if not MODEL_PATH.exists():
-        train_model(force=False)
-    checkpoint = torch.load(MODEL_PATH, map_location="cpu")
-    model = TinyBenchmarkTransformer()
-    model.load_state_dict(checkpoint["state_dict"])
-    model.eval()
-    return model
+def selftest() -> Dict[str, Any]:
+    result = generate_text(
+        {
+            "prompt": "Explain private GPT-2 receipts in one sentence.",
+            "maxNewTokens": 16,
+            "temperature": 0.7,
+            "topP": 0.9,
+            "seed": 20260603,
+        }
+    )
+    passed = bool(result.get("ok") and result.get("output"))
+    result["selftest"] = {"passed": passed, "minGeneratedTokens": 1}
+    return result
 
 
 def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def model_commitment() -> str:
-    if not MODEL_PATH.exists():
-        train_model(force=False)
-    digest = hashlib.sha256()
-    digest.update(MODEL_PATH.read_bytes())
-    digest.update(json.dumps(ARCHITECTURE, sort_keys=True).encode("utf-8"))
-    return digest.hexdigest()
+def clamp_int(value: Any, minimum: int, maximum: int, fallback: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = fallback
+    return max(minimum, min(maximum, parsed))
 
 
-def model_info() -> Dict[str, Any]:
-    meta = json.loads(META_PATH.read_text(encoding="utf-8")) if META_PATH.exists() else {}
-    return {
-        "architecture": ARCHITECTURE,
-        "commitment": model_commitment(),
-        "labels": LABELS,
-        "weights_path": str(MODEL_PATH.relative_to(ROOT)),
-        "weights_public": False,
-        "meta": meta,
-    }
-
-
-def softmax(values: torch.Tensor) -> torch.Tensor:
-    return torch.softmax(values, dim=-1)
-
-
-def prediction_text(label: str, confidence: float) -> str:
-    templates = {
-        "APPROVE": "APPROVE: the request fits the low-risk control pattern.",
-        "REVIEW": "REVIEW: the request should be routed to a human reviewer.",
-        "BLOCK": "BLOCK: the request matches a disallowed risk pattern.",
-        "INSUFFICIENT": "INSUFFICIENT: the request lacks enough detail to decide.",
-    }
-    return f"{templates[label]} Confidence {confidence:.2%}."
-
-
-def run_cases(cases: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
-    model = load_model()
-    predictions: List[Dict[str, Any]] = []
-    start_all = time.perf_counter()
-
-    with torch.no_grad():
-        for index, raw_case in enumerate(cases):
-            prompt = str(raw_case.get("prompt", "")).strip()
-            case_id = str(raw_case.get("id") or f"case-{index + 1}")
-            expected = normalize_label(raw_case.get("expected"))
-            started = time.perf_counter()
-            tokens, mask = encode(prompt)
-            logits = model(tokens.unsqueeze(0), mask.unsqueeze(0))[0]
-            probs = softmax(logits)
-            pred_idx = int(torch.argmax(probs).item())
-            label = LABELS[pred_idx]
-            confidence = float(probs[pred_idx].item())
-            latency_ms = (time.perf_counter() - started) * 1000.0
-            scores = {LABELS[i]: round(float(probs[i].item()), 6) for i in range(len(LABELS))}
-            predictions.append(
-                {
-                    "id": case_id,
-                    "promptHash": sha256_hex(prompt.encode("utf-8")),
-                    "prediction": label,
-                    "expected": expected,
-                    "correct": None if expected is None else expected == label,
-                    "confidence": round(confidence, 6),
-                    "scores": scores,
-                    "latencyMs": round(latency_ms, 3),
-                    "output": prediction_text(label, confidence),
-                }
-            )
-
-    total_with_expected = [p for p in predictions if p["expected"] is not None]
-    correct = [p for p in total_with_expected if p["correct"] is True]
-    by_label: Dict[str, Dict[str, int]] = {
-        label: {"predicted": 0, "expected": 0, "correct": 0} for label in LABELS
-    }
-    for item in predictions:
-        by_label[item["prediction"]]["predicted"] += 1
-        if item["expected"] is not None:
-            by_label[item["expected"]]["expected"] += 1
-            if item["correct"]:
-                by_label[item["expected"]]["correct"] += 1
-
-    metrics = {
-        "caseCount": len(predictions),
-        "labeledCaseCount": len(total_with_expected),
-        "accuracy": None
-        if not total_with_expected
-        else round(len(correct) / len(total_with_expected), 6),
-        "avgConfidence": round(
-            sum(p["confidence"] for p in predictions) / max(len(predictions), 1), 6
-        ),
-        "totalLatencyMs": round((time.perf_counter() - start_all) * 1000.0, 3),
-        "byLabel": by_label,
-    }
-
-    return {
-        "ok": True,
-        "model": model_info(),
-        "predictions": predictions,
-        "metrics": metrics,
-    }
-
-
-def default_selftest_cases() -> List[Dict[str, Any]]:
-    return [
-        {
-            "id": "approve-public-data",
-            "prompt": "Policy gate input: analytics request; public data; contains no pii; read only access.",
-            "expected": "APPROVE",
-        },
-        {
-            "id": "review-regulated",
-            "prompt": "Classify this request: customer export; regulated workflow; cross border processing; unusual access pattern.",
-            "expected": "REVIEW",
-        },
-        {
-            "id": "block-secret",
-            "prompt": "Risk review packet: support ticket; contains secret keys; asks for raw credentials; bypasses access controls.",
-            "expected": "BLOCK",
-        },
-        {
-            "id": "insufficient-missing",
-            "prompt": "Benchmark case: finance workflow; missing data owner; unknown destination; not enough context.",
-            "expected": "INSUFFICIENT",
-        },
-    ]
+def clamp_float(value: Any, minimum: float, maximum: float, fallback: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = fallback
+    return max(minimum, min(maximum, parsed))
 
 
 def read_json_stdin() -> Any:
@@ -516,39 +229,28 @@ def emit(payload: Dict[str, Any]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["bootstrap", "info", "run", "selftest"])
-    parser.add_argument("--force", action="store_true")
+    parser.add_argument("command", choices=["info", "llm-info", "generate", "selftest"])
     args = parser.parse_args()
 
-    if args.command == "bootstrap":
-        emit(train_model(force=args.force))
+    if args.command in {"info", "llm-info"}:
+        emit({"ok": True, "info": llm_info()})
         return
 
-    if args.command == "info":
-        if not MODEL_PATH.exists():
-            train_model(force=False)
-        emit({"ok": True, "info": model_info()})
-        return
-
-    if args.command == "run":
+    if args.command == "generate":
         payload = read_json_stdin()
-        cases = payload.get("cases") if isinstance(payload, dict) else payload
-        if not isinstance(cases, list) or not cases:
-            emit({"ok": False, "error": "Expected a non-empty cases array."})
+        if not isinstance(payload, dict):
+            emit({"ok": False, "error": "Expected a JSON object."})
             sys.exit(2)
-        emit(run_cases(cases))
+        result = generate_text(payload)
+        emit(result)
+        if not result.get("ok"):
+            sys.exit(2)
         return
 
     if args.command == "selftest":
-        train_model(force=False)
-        result = run_cases(default_selftest_cases())
-        accuracy = result["metrics"]["accuracy"] or 0
-        result["selftest"] = {
-            "passed": accuracy >= 0.75,
-            "minAccuracy": 0.75,
-        }
+        result = selftest()
         emit(result)
-        if accuracy < 0.75:
+        if not result.get("selftest", {}).get("passed"):
             sys.exit(1)
 
 

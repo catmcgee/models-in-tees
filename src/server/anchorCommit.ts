@@ -18,14 +18,14 @@ import type { SignedReceipt, SolanaCommitment } from "./types.js";
 const SESSION_SEED = Buffer.from("session");
 const payerPath = path.join(solanaDir, "devnet-keypair.json");
 
-export function getPrivateBenchmarkProgramId(): PublicKey {
-  return new PublicKey(config.privateBenchmarkProgramId);
+export function getPrivateReceiptProgramId(): PublicKey {
+  return new PublicKey(config.privateReceiptProgramId);
 }
 
 export function deriveSessionPda(receiptDigest: string): PublicKey {
   const [session] = PublicKey.findProgramAddressSync(
     [SESSION_SEED, hexToBytes(receiptDigest)],
-    getPrivateBenchmarkProgramId()
+    getPrivateReceiptProgramId()
   );
   return session;
 }
@@ -36,7 +36,7 @@ export async function commitReceiptToAnchorProgram(
 ): Promise<SolanaCommitment> {
   const connection = new Connection(config.solanaRpcUrl, "confirmed");
   const payer = loadOrCreateDevnetPayer();
-  const programId = getPrivateBenchmarkProgramId();
+  const programId = getPrivateReceiptProgramId();
   const sessionPda = deriveSessionPda(receipt.digest);
   const message = buildCommitmentMessage(receipt);
   const memoHash = sha256Hex(message);
@@ -140,17 +140,14 @@ function buildCreateReceiptInstruction(
 
 function encodeCreateReceiptArgs(receipt: SignedReceipt): Buffer {
   const discriminator = instructionDiscriminator("create_receipt");
-  const accuracy = receipt.payload.metrics.accuracy;
-  const accuracyPpm =
-    typeof accuracy === "number" ? Math.round(Math.max(0, Math.min(1, accuracy)) * 1_000_000) : 0;
   const body = Buffer.concat([
     hexToBytes(receipt.digest),
-    hexToBytes(receipt.payload.inputSetHash),
-    hexToBytes(receipt.payload.outputSetHash),
-    hexToBytes(receipt.payload.metricsHash),
+    hexToBytes(receipt.payload.promptHash),
+    hexToBytes(receipt.payload.outputHash),
+    hexToBytes(receipt.payload.paramsHash),
     hexToBytes(receipt.payload.model.commitment),
-    u32le(accuracyPpm),
-    u16le(receipt.payload.metrics.caseCount)
+    u32le(Math.round(receipt.payload.generation.latencyMs)),
+    u16le(receipt.payload.generation.tokenCount.generated)
   ]);
   return Buffer.concat([discriminator, body]);
 }
@@ -167,9 +164,9 @@ function buildCommitmentMessage(receipt: SignedReceipt): string {
     schema: "tee-ai-anchor-commit/v1",
     receiptDigest: receipt.digest,
     modelCommitment: receipt.payload.model.commitment,
-    inputSetHash: receipt.payload.inputSetHash,
-    outputSetHash: receipt.payload.outputSetHash,
-    metricsHash: receipt.payload.metricsHash,
+    promptHash: receipt.payload.promptHash,
+    outputHash: receipt.payload.outputHash,
+    paramsHash: receipt.payload.paramsHash,
     teeEvidenceHash: receipt.payload.runner.teeEvidenceHash || null,
     issuedAt: receipt.payload.issuedAt
   });

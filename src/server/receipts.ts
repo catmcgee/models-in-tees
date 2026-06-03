@@ -11,8 +11,7 @@ import { attestationDir, config } from "./config.js";
 import { base64url, canonicalJson, fromBase64url, sha256Hex } from "./canonical.js";
 import { summarizeTeeEvidence } from "./teeEvidence.js";
 import type {
-  BenchmarkCase,
-  ModelRunResult,
+  GenerationResult,
   ReceiptPayload,
   SignedReceipt,
   TeeEvidence
@@ -21,46 +20,30 @@ import type {
 const privateKeyPath = path.join(attestationDir, "tee-ed25519-private.pem");
 const publicKeyPath = path.join(attestationDir, "tee-ed25519-public.pem");
 
-export function createSignedReceipt(
-  benchmarkId: string,
-  cases: BenchmarkCase[],
-  run: ModelRunResult,
+export function createSignedGenerationReceipt(
+  runId: string,
+  generation: GenerationResult,
   teeEvidence?: TeeEvidence
 ): SignedReceipt {
   const keypair = loadOrCreateAttestationKeys();
   const publicKeyFingerprint = sha256Hex(keypair.publicKeyPem).slice(0, 32);
-  const inputSetHash = sha256Hex(
-    cases.map((item) => ({
-      id: item.id || null,
-      promptHash: sha256Hex(item.prompt),
-      expected: item.expected || null
-    }))
-  );
-  const outputSetHash = sha256Hex(
-    run.predictions.map((item) => ({
-      id: item.id,
-      promptHash: item.promptHash,
-      prediction: item.prediction,
-      expected: item.expected,
-      correct: item.correct,
-      confidence: item.confidence,
-      outputHash: sha256Hex(item.output)
-    }))
-  );
-  const metricsHash = sha256Hex(run.metrics);
   const payload: ReceiptPayload = {
-    schema: "private-benchmark-receipt/v1",
-    benchmarkId,
+    schema: "private-gpt2-receipt/v1",
+    runId,
     issuedAt: new Date().toISOString(),
-    inputSetHash,
-    outputSetHash,
-    metricsHash,
+    promptHash: generation.promptHash,
+    outputHash: generation.outputHash,
+    paramsHash: sha256Hex(generation.params),
     model: {
-      commitment: run.model.commitment,
-      architecture: run.model.architecture,
+      commitment: generation.model.commitment,
+      architecture: generation.model.architecture,
       weightsPublic: false
     },
-    metrics: run.metrics,
+    generation: {
+      latencyMs: generation.latencyMs,
+      tokenCount: generation.tokenCount,
+      params: generation.params
+    },
     runner: {
       teeMode: config.teeMode,
       teeProvider: config.teeProvider,

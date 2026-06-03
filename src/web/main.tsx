@@ -9,103 +9,93 @@ import {
   Database,
   FileCheck2,
   Fingerprint,
-  Gauge,
   KeyRound,
   Loader2,
   Lock,
-  RadioTower,
   RefreshCcw,
   Send,
   ShieldCheck,
+  SlidersHorizontal,
   WalletCards,
   XCircle
 } from "lucide-react";
 import "./styles.css";
 
-type Label = "APPROVE" | "REVIEW" | "BLOCK" | "INSUFFICIENT";
 type VerificationState = "unchecked" | "checking" | "valid" | "invalid";
-
-interface BenchmarkCase {
-  id: string;
-  prompt: string;
-  expected: Label;
-}
-
-interface Scenario extends BenchmarkCase {
-  title: string;
-  note: string;
-}
 
 interface ModelInfo {
   commitment: string;
   architecture: Record<string, unknown>;
-  labels: Label[];
   weights_path: string;
   weights_public: boolean;
+  meta: Record<string, unknown>;
 }
 
-interface Prediction {
-  id: string;
-  prediction: Label;
-  expected: Label | null;
-  correct: boolean | null;
-  confidence: number;
-  latencyMs: number;
-  output: string;
-  scores: Record<Label, number>;
+interface ReceiptPayload {
+  schema: "private-gpt2-receipt/v1";
+  runId: string;
+  issuedAt: string;
+  promptHash: string;
+  outputHash: string;
+  paramsHash: string;
+  runner: {
+    teeMode: string;
+    teeProvider: string;
+    publicKeyFingerprint: string;
+    teeEvidenceHash?: string;
+    teeEvidence?: TeeEvidenceSummary;
+  };
+  model: {
+    commitment: string;
+  };
+  generation: {
+    latencyMs: number;
+    tokenCount: {
+      prompt: number;
+      generated: number;
+    };
+    params: {
+      maxNewTokens: number;
+      temperature: number;
+      topP: number;
+    };
+  };
 }
 
-interface BenchmarkRecord {
+interface Receipt {
+  payload: ReceiptPayload;
+  signature: string;
+  digest: string;
+  algorithm: string;
+}
+
+interface GenerationRecord {
+  kind: "generation";
   id: string;
-  cases: BenchmarkCase[];
-  run: {
+  prompt: string;
+  generation: {
     model: ModelInfo;
-    predictions: Prediction[];
-    metrics: {
-      caseCount: number;
-      labeledCaseCount: number;
-      accuracy: number | null;
-      avgConfidence: number;
-      totalLatencyMs: number;
+    promptHash: string;
+    output: string;
+    outputHash: string;
+    latencyMs: number;
+    tokenCount: {
+      prompt: number;
+      generated: number;
+    };
+    params: {
+      maxNewTokens: number;
+      temperature: number;
+      topP: number;
     };
   };
-  receipt: {
-    payload: {
-      issuedAt: string;
-      inputSetHash: string;
-      outputSetHash: string;
-      metricsHash: string;
-      runner: {
-        teeMode: string;
-        teeProvider: string;
-        publicKeyFingerprint: string;
-        teeEvidenceHash?: string;
-        teeEvidence?: TeeEvidenceSummary;
-      };
-      model: {
-        commitment: string;
-      };
-    };
-    signature: string;
-    digest: string;
-    algorithm: string;
-  };
+  receipt: Receipt;
   solanaCommitment?: {
     status: "confirmed" | "dry-run" | "failed";
     payer: string;
     signature?: string;
     explorerUrl?: string;
     memoHash: string;
-    error?: string;
-  } | null;
-  magicBlockFlow?: {
-    ok: boolean;
-    sessionPda: string;
-    delegateSignature?: string;
-    finalizeSignature?: string;
-    commitErSignature?: string;
-    baseCommitSignature?: string;
-    delegatedOnBase?: boolean;
     error?: string;
   } | null;
   createdAt: string;
@@ -149,70 +139,24 @@ interface SolanaStatus {
   blockhash: string;
 }
 
-interface MagicBlockStatus {
-  ephemeralRollupRpcUrl: string;
-  erRpc?: {
-    ok: boolean;
-    error?: string;
-  };
-  statusApi?: {
-    regions: Array<{
-      region: string;
-      servers: Array<{
-        endpoint: string;
-        liveStatus: Record<string, boolean | null>;
-      }>;
-    }>;
-  };
-}
-
-const LABELS: Label[] = ["APPROVE", "REVIEW", "BLOCK", "INSUFFICIENT"];
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
-const SCENARIOS: Scenario[] = [
-  {
-    id: "approve-public-data",
-    title: "Clean analytics",
-    note: "A low-risk request that should pass.",
-    prompt:
-      "Policy gate input: analytics request; public data; contains no pii; read only access.",
-    expected: "APPROVE"
-  },
-  {
-    id: "review-regulated",
-    title: "Regulated export",
-    note: "A request that needs human review.",
-    prompt:
-      "Classify this request: customer export; regulated workflow; cross border processing; unusual access pattern.",
-    expected: "REVIEW"
-  },
-  {
-    id: "block-secret",
-    title: "Credential leak",
-    note: "A request that should be blocked.",
-    prompt:
-      "Risk review packet: support ticket; contains secret keys; asks for raw credentials; bypasses access controls.",
-    expected: "BLOCK"
-  },
-  {
-    id: "insufficient-missing",
-    title: "Missing context",
-    note: "A request the model should not decide yet.",
-    prompt:
-      "Benchmark case: finance workflow; missing data owner; unknown destination; not enough context.",
-    expected: "INSUFFICIENT"
-  }
+const SAMPLE_PROMPTS = [
+  "OpenAI wants to let the public test GPT-2, but the checkpoint has to stay private. Explain how a TEE receipt helps.",
+  "Write a short product note for a private model evaluation marketplace on Solana.",
+  "A user asks the private model to summarize confidential telemetry. Describe what the public should be able to verify.",
+  "Explain the difference between keeping model weights private and proving a model output was signed by a trusted runner."
 ];
 
 function App() {
-  const [selectedScenarioId, setSelectedScenarioId] = React.useState(SCENARIOS[0].id);
-  const [prompt, setPrompt] = React.useState(SCENARIOS[0].prompt);
-  const [expected, setExpected] = React.useState<Label>(SCENARIOS[0].expected);
+  const [prompt, setPrompt] = React.useState(SAMPLE_PROMPTS[0]);
+  const [maxNewTokens, setMaxNewTokens] = React.useState(80);
+  const [temperature, setTemperature] = React.useState(0.75);
+  const [topP, setTopP] = React.useState(0.92);
   const [model, setModel] = React.useState<ModelInfo | null>(null);
-  const [records, setRecords] = React.useState<BenchmarkRecord[]>([]);
-  const [activeRecord, setActiveRecord] = React.useState<BenchmarkRecord | null>(null);
+  const [records, setRecords] = React.useState<GenerationRecord[]>([]);
+  const [activeRecord, setActiveRecord] = React.useState<GenerationRecord | null>(null);
   const [solana, setSolana] = React.useState<SolanaStatus | null>(null);
-  const [magicblock, setMagicblock] = React.useState<MagicBlockStatus | null>(null);
   const [teeEvidence, setTeeEvidence] = React.useState<TeeEvidenceSummary | null>(null);
   const [audit, setAudit] = React.useState<ReceiptAudit | null>(null);
   const [busy, setBusy] = React.useState<string | null>("Loading");
@@ -228,7 +172,7 @@ function App() {
   React.useEffect(() => {
     let cancelled = false;
 
-    async function verifyAndAudit(record: BenchmarkRecord) {
+    async function verifyAndAudit(record: GenerationRecord) {
       setVerification("checking");
       setAudit(null);
       try {
@@ -268,23 +212,16 @@ function App() {
     setBusy("Refreshing");
     setError(null);
     try {
-      const [modelBody, receiptsBody, solanaBody, magicBody, teeBody] =
-        await Promise.all([
-          apiGet<{ model: ModelInfo }>("/api/model"),
-          apiGet<{ records: BenchmarkRecord[] }>("/api/receipts"),
-          apiGet<{ solana: SolanaStatus }>("/api/solana/status").catch(() => null),
-          apiGet<{ magicblock: MagicBlockStatus }>("/api/magicblock/status").catch(
-            () => null
-          ),
-          apiGet<{ summary: TeeEvidenceSummary }>("/api/tee/evidence").catch(
-            () => null
-          )
-        ]);
-      setModel(modelBody.model);
+      const [modelBody, receiptsBody, solanaBody, teeBody] = await Promise.all([
+        apiGet<{ model: ModelInfo }>("/api/llm").catch(() => null),
+        apiGet<{ records: GenerationRecord[] }>("/api/receipts"),
+        apiGet<{ solana: SolanaStatus }>("/api/solana/status").catch(() => null),
+        apiGet<{ summary: TeeEvidenceSummary }>("/api/tee/evidence").catch(() => null)
+      ]);
+      setModel(modelBody?.model || null);
       setRecords(receiptsBody.records);
       setActiveRecord((current) => current || receiptsBody.records[0] || null);
       setSolana(solanaBody?.solana || null);
-      setMagicblock(magicBody?.magicblock || null);
       setTeeEvidence(teeBody?.summary || null);
     } catch (err) {
       setError(toError(err));
@@ -293,35 +230,22 @@ function App() {
     }
   }
 
-  function selectScenario(scenario: Scenario) {
-    setSelectedScenarioId(scenario.id);
-    setPrompt(scenario.prompt);
-    setExpected(scenario.expected);
-  }
-
-  async function runPrivateModel(mode: "single" | "set" = "single") {
-    setBusy(mode === "single" ? "Running private model" : "Running example set");
+  async function runGeneration() {
+    setBusy("Running GPT-2");
     setError(null);
     try {
-      const cases =
-        mode === "single"
-          ? [
-              {
-                id: selectedScenarioId || "visitor-input",
-                prompt,
-                expected
-              }
-            ]
-          : SCENARIOS.map(({ id, prompt: scenarioPrompt, expected: label }) => ({
-              id,
-              prompt: scenarioPrompt,
-              expected: label
-            }));
-      const body = await apiPost<{ record: BenchmarkRecord }>("/api/benchmark", {
-        cases
+      const body = await apiPost<{ record: GenerationRecord }>("/api/generate", {
+        prompt,
+        maxNewTokens,
+        temperature,
+        topP
       });
       setActiveRecord(body.record);
-      setRecords((current) => [body.record, ...current]);
+      setModel(body.record.generation.model);
+      setRecords((current) => [
+        body.record,
+        ...current.filter((record) => record.id !== body.record.id)
+      ]);
     } catch (err) {
       setError(toError(err));
     } finally {
@@ -335,7 +259,7 @@ function App() {
     setError(null);
     try {
       const body = await apiPost<{
-        record: BenchmarkRecord;
+        record: GenerationRecord;
       }>(`/api/receipts/${activeRecord.id}/commit`, {
         dryRun: dryRunCommit
       });
@@ -350,35 +274,15 @@ function App() {
     }
   }
 
-  async function runMagicBlockFlow() {
-    if (!activeRecord) return;
-    setBusy("Testing MagicBlock");
-    setError(null);
-    try {
-      const body = await apiPost<{
-        record: BenchmarkRecord;
-      }>(`/api/receipts/${activeRecord.id}/magicblock`, {});
-      setActiveRecord(body.record);
-      setRecords((current) =>
-        current.map((record) => (record.id === body.record.id ? body.record : record))
-      );
-    } catch (err) {
-      setError(toError(err));
-    } finally {
-      setBusy(null);
-    }
-  }
-
   const activeTeeEvidence = activeRecord?.receipt.payload.runner.teeEvidence || teeEvidence;
-  const latestPrediction = activeRecord?.run.predictions[0] || null;
-  const metrics = activeRecord?.run.metrics || null;
+  const activeModel = activeRecord?.generation.model || model;
   const proofItems = [
     {
       label: "Model",
-      value: model?.weights_public ? "Weights exposed" : "Weights hidden",
-      detail: shortHash(model?.commitment),
+      value: activeModel?.weights_public ? "Weights exposed" : "Weights hidden",
+      detail: shortHash(activeModel?.commitment),
       icon: <Lock size={18} />,
-      tone: model?.weights_public ? "warn" : "good"
+      tone: activeModel?.weights_public ? "warn" : "good"
     },
     {
       label: "Receipt",
@@ -412,8 +316,8 @@ function App() {
               <Fingerprint size={24} />
             </span>
             <div>
-              <strong>Private Model Verifier</strong>
-              <span>TEE-backed policy model on Solana devnet</span>
+              <strong>Private GPT-2 Verifier</strong>
+              <span>TEE-backed generation with Solana devnet receipts</span>
             </div>
           </div>
           <button className="icon-button" type="button" onClick={refreshAll} disabled={!!busy}>
@@ -424,99 +328,107 @@ function App() {
 
         <div className="hero-grid">
           <section className="experiment-panel" aria-labelledby="experiment-title">
-            <p className="eyebrow">Public test</p>
-            <h1 id="experiment-title">Send one request to a model you cannot inspect.</h1>
+            <p className="eyebrow">Public demo</p>
+            <h1 id="experiment-title">Try GPT-2 without seeing its weights.</h1>
             <p className="lead">
-              This is a public test harness for a private AI model. You can query
-              the model and verify the run, but the model weights never appear in
-              the browser or the public repo.
+              Imagine OpenAI wanted the public to test GPT-2 while keeping the
+              checkpoint private. Type a prompt, get a model response, then verify
+              a signed receipt that binds the prompt hash, output hash, private
+              model commitment, TEE evidence, and optional Solana timestamp.
             </p>
 
-            <div className="how-strip" aria-label="How to use this demo">
+            <div className="how-strip" aria-label="Demo flow">
               <div>
                 <span>1</span>
-                <strong>Choose a request</strong>
-                <p>Use a sample policy case or write your own request.</p>
+                <strong>Send a prompt</strong>
+                <p>The browser sends text to the private runner, not weights.</p>
               </div>
               <div>
                 <span>2</span>
-                <strong>Run the hidden model</strong>
-                <p>The backend runs the model inside the private runner.</p>
+                <strong>Read GPT-2 output</strong>
+                <p>The API returns generated text plus hashes of the run.</p>
               </div>
               <div>
                 <span>3</span>
-                <strong>Check the receipt</strong>
-                <p>Verify the signed result, TEE evidence, and optional devnet anchor.</p>
+                <strong>Verify the receipt</strong>
+                <p>The receipt can be audited and timestamped on devnet.</p>
               </div>
             </div>
 
-            <div className="scenario-tabs" aria-label="Example scenarios">
-              {SCENARIOS.map((scenario) => (
+            <div className="preset-prompts" aria-label="Sample prompts">
+              {SAMPLE_PROMPTS.map((sample, index) => (
                 <button
                   type="button"
-                  key={scenario.id}
-                  className={scenario.id === selectedScenarioId ? "active" : ""}
-                  onClick={() => selectScenario(scenario)}
+                  key={sample}
+                  onClick={() => setPrompt(sample)}
+                  className={prompt === sample ? "active" : ""}
                 >
-                  <strong>{scenario.title}</strong>
-                  <span>{scenario.note}</span>
+                  Prompt {index + 1}
                 </button>
               ))}
             </div>
 
             <label className="prompt-box">
-              <span>Request under review</span>
+              <span>Prompt to private GPT-2</span>
               <textarea
                 value={prompt}
-                onChange={(event) => {
-                  setPrompt(event.target.value);
-                  setSelectedScenarioId("visitor-input");
-                }}
+                onChange={(event) => setPrompt(event.target.value)}
               />
             </label>
 
-            <div className="run-row">
-              <label className="expected-select">
-                <span>Your expected verdict</span>
-                <select
-                  value={expected}
-                  onChange={(event) => setExpected(event.target.value as Label)}
-                >
-                  {LABELS.map((label) => (
-                    <option value={label} key={label}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
+            <div className="control-grid">
+              <label className="range-field">
+                <span>New tokens</span>
+                <strong>{maxNewTokens}</strong>
+                <input
+                  type="range"
+                  min={16}
+                  max={180}
+                  step={4}
+                  value={maxNewTokens}
+                  onChange={(event) => setMaxNewTokens(Number(event.target.value))}
+                />
               </label>
+              <label className="range-field">
+                <span>Temperature</span>
+                <strong>{temperature.toFixed(2)}</strong>
+                <input
+                  type="range"
+                  min={0.1}
+                  max={1.5}
+                  step={0.05}
+                  value={temperature}
+                  onChange={(event) => setTemperature(Number(event.target.value))}
+                />
+              </label>
+              <label className="range-field">
+                <span>Top-p</span>
+                <strong>{topP.toFixed(2)}</strong>
+                <input
+                  type="range"
+                  min={0.1}
+                  max={1}
+                  step={0.05}
+                  value={topP}
+                  onChange={(event) => setTopP(Number(event.target.value))}
+                />
+              </label>
+            </div>
+
+            <div className="run-row">
               <button
                 className="primary-button"
                 type="button"
-                onClick={() => runPrivateModel("single")}
-                disabled={!!busy || prompt.trim().length < 8}
+                onClick={runGeneration}
+                disabled={!!busy || prompt.trim().length < 1}
               >
                 <Send size={18} />
-                <span>Run private model</span>
-              </button>
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={() => runPrivateModel("set")}
-                disabled={!!busy}
-              >
-                <Gauge size={18} />
-                <span>Run examples</span>
+                <span>Generate with GPT-2</span>
               </button>
             </div>
           </section>
 
-          <ResultSummary
-            record={activeRecord}
-            prediction={latestPrediction}
-            metrics={metrics}
-            verification={verification}
-            busy={busy}
-          />
+          <ResultSummary record={activeRecord} verification={verification} busy={busy} />
         </div>
       </header>
 
@@ -538,15 +450,15 @@ function App() {
           <div className="panel-heading">
             <div>
               <span className="section-kicker">Model output</span>
-              <h2>Readable result</h2>
+              <h2>Generated text</h2>
             </div>
-            {metrics && <span className="pill">{metrics.caseCount} case run</span>}
+            {activeRecord && (
+              <span className="pill">
+                {activeRecord.generation.tokenCount.generated} tokens
+              </span>
+            )}
           </div>
-          {activeRecord ? (
-            <PredictionList record={activeRecord} />
-          ) : (
-            <EmptyState />
-          )}
+          {activeRecord ? <OutputPanel record={activeRecord} /> : <EmptyState />}
         </section>
 
         <section className="panel receipt-panel">
@@ -597,15 +509,6 @@ function App() {
                   <FileCheck2 size={16} />
                   <span>Anchor receipt</span>
                 </button>
-                <button
-                  className="secondary-button compact"
-                  type="button"
-                  onClick={runMagicBlockFlow}
-                  disabled={!!busy}
-                >
-                  <RadioTower size={16} />
-                  <span>Try MagicBlock</span>
-                </button>
               </div>
 
               <ChainNotice record={activeRecord} />
@@ -623,13 +526,13 @@ function App() {
         </summary>
         <div className="advanced-grid">
           <section>
-            <h3>Hidden model</h3>
+            <h3>Private model</h3>
             <FactList
               items={[
-                ["Weights", model?.weights_public ? "public" : "private"],
-                ["Commitment", model?.commitment || "pending"],
-                ["Architecture", modelArchitecture(model)],
-                ["Labels", model?.labels.join(", ") || "pending"]
+                ["Weights", activeModel?.weights_public ? "public" : "private"],
+                ["Model", String(activeModel?.architecture.model_id || "gpt2")],
+                ["Commitment", activeModel?.commitment || "pending"],
+                ["Architecture", modelArchitecture(activeModel)]
               ]}
             />
           </section>
@@ -647,14 +550,13 @@ function App() {
           </section>
 
           <section>
-            <h3>Solana and MagicBlock</h3>
+            <h3>Solana devnet</h3>
             <FactList
               items={[
                 ["Base RPC", solana?.rpcUrl || "devnet"],
                 ["Payer", solana?.payer || "pending"],
                 ["Balance", solana ? `${solana.balanceSol.toFixed(4)} SOL` : "pending"],
-                ["ER RPC", magicblock?.ephemeralRollupRpcUrl || "pending"],
-                ["ER health", magicblock?.erRpc?.ok ? "online" : magicblock?.erRpc?.error || "pending"]
+                ["Latest anchor", activeRecord?.solanaCommitment?.memoHash || "local only"]
               ]}
             />
           </section>
@@ -666,80 +568,86 @@ function App() {
                 <ReceiptCanvas record={activeRecord} />
                 <FactList
                   items={[
-                    ["Input set", activeRecord.receipt.payload.inputSetHash],
-                    ["Output set", activeRecord.receipt.payload.outputSetHash],
-                    ["Metrics", activeRecord.receipt.payload.metricsHash],
+                    ["Schema", activeRecord.receipt.payload.schema],
+                    ["Prompt", activeRecord.receipt.payload.promptHash],
+                    ["Output", activeRecord.receipt.payload.outputHash],
+                    ["Params", activeRecord.receipt.payload.paramsHash],
                     ["TEE key", activeRecord.receipt.payload.runner.publicKeyFingerprint],
                     ["Signature", activeRecord.receipt.signature]
                   ]}
                 />
               </>
             ) : (
-              <p className="muted-copy">Run the model to create a receipt.</p>
+              <p className="muted-copy">Run GPT-2 to create a receipt.</p>
             )}
           </section>
         </div>
       </details>
+
+      <section className="context-strip">
+        <SlidersHorizontal size={18} />
+        <p>
+          This demo uses a TEE-style trust model, not ZK. The model checkpoint is
+          kept off the public frontend, and each output gets a signed receipt
+          that can be verified and optionally timestamped on Solana devnet.
+        </p>
+      </section>
     </main>
   );
 }
 
 function ResultSummary({
   record,
-  prediction,
-  metrics,
   verification,
   busy
 }: {
-  record: BenchmarkRecord | null;
-  prediction: Prediction | null;
-  metrics: BenchmarkRecord["run"]["metrics"] | null;
+  record: GenerationRecord | null;
   verification: VerificationState;
   busy: string | null;
 }) {
-  if (!record || !prediction) {
+  if (!record) {
     return (
       <aside className="result-panel waiting">
         <div className="result-icon">
           {busy ? <Loader2 className="spin" size={24} /> : <ShieldCheck size={24} />}
         </div>
         <span className="section-kicker">Current result</span>
-        <h2>{busy || "Ready for a test"}</h2>
+        <h2>{busy || "Ready for GPT-2"}</h2>
         <p>
-          No public weights are loaded in the browser. A run returns only the
-          verdict, confidence, and receipt.
+          No public weights are loaded in the browser. A run returns generated
+          text, hashes, TEE evidence, and a signed receipt.
         </p>
       </aside>
     );
   }
 
   return (
-    <aside className={`result-panel ${labelTone(prediction.prediction)}`}>
+    <aside className="result-panel generate">
       <div className="result-top">
         <span className="section-kicker">Current result</span>
         <VerificationBadge state={verification} />
       </div>
-      <div className="verdict">
-        <span>Model verdict</span>
-        <strong>{prediction.prediction}</strong>
+      <div className="verdict text-result">
+        <span>GPT-2 continuation</span>
+        <strong>{record.generation.tokenCount.generated} tokens</strong>
       </div>
-      <p>{prediction.output}</p>
+      <p>{previewText(record.generation.output)}</p>
       <div className="score-grid">
         <div>
-          <span>Confidence</span>
-          <strong>{formatPercent(prediction.confidence)}</strong>
-        </div>
-        <div>
-          <span>Expectation</span>
-          <strong>{matchLabel(prediction)}</strong>
-        </div>
-        <div>
           <span>Latency</span>
-          <strong>{formatMs(prediction.latencyMs)}</strong>
+          <strong>{formatMs(record.generation.latencyMs)}</strong>
         </div>
         <div>
-          <span>Set score</span>
-          <strong>{formatPercent(metrics?.accuracy)}</strong>
+          <span>Prompt hash</span>
+          <strong>{shortHash(record.generation.promptHash, 7)}</strong>
+        </div>
+        <div>
+          <span>Temperature</span>
+          <strong>{record.generation.params.temperature.toFixed(2)}</strong>
+        </div>
+        <div>
+          <span>Top-p</span>
+          <strong>{record.generation.params.topP.toFixed(2)}</strong>
         </div>
       </div>
     </aside>
@@ -788,29 +696,27 @@ function VerificationBadge({ state }: { state: VerificationState }) {
   );
 }
 
-function PredictionList({ record }: { record: BenchmarkRecord }) {
+function OutputPanel({ record }: { record: GenerationRecord }) {
   return (
-    <div className="prediction-stack">
-      {record.run.predictions.map((prediction) => (
-        <article className="prediction-row" key={prediction.id}>
-          <div className={`label-chip ${labelTone(prediction.prediction)}`}>
-            {prediction.prediction}
-          </div>
-          <div className="prediction-copy">
-            <strong>{humanCaseName(prediction.id)}</strong>
-            <span>{prediction.output}</span>
-          </div>
-          <div className="prediction-meter">
-            <span>{formatPercent(prediction.confidence)}</span>
-            <meter min={0} max={1} value={prediction.confidence} />
-          </div>
-        </article>
-      ))}
+    <div className="generated-output">
+      <div className="prompt-echo">
+        <span>Prompt hash</span>
+        <strong>{shortHash(record.generation.promptHash, 16)}</strong>
+      </div>
+      <article>
+        <p>{record.generation.output}</p>
+      </article>
+      <div className="model-stats">
+        <span>{formatMs(record.generation.latencyMs)}</span>
+        <span>{record.generation.tokenCount.prompt} prompt tokens</span>
+        <span>{record.generation.tokenCount.generated} generated tokens</span>
+        <span>{shortHash(record.generation.outputHash, 12)}</span>
+      </div>
     </div>
   );
 }
 
-function ChainNotice({ record }: { record: BenchmarkRecord }) {
+function ChainNotice({ record }: { record: GenerationRecord }) {
   if (record.solanaCommitment) {
     return (
       <div className={`chain-notice ${record.solanaCommitment.status}`}>
@@ -831,23 +737,6 @@ function ChainNotice({ record }: { record: BenchmarkRecord }) {
             )}
           </strong>
           <span>{shortHash(record.solanaCommitment.memoHash, 14)}</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (record.magicBlockFlow) {
-    return (
-      <div className={`chain-notice ${record.magicBlockFlow.ok ? "confirmed" : "failed"}`}>
-        <RadioTower size={17} />
-        <div>
-          <strong>{record.magicBlockFlow.ok ? "MagicBlock flow passed" : "MagicBlock flow failed"}</strong>
-          <span>
-            {shortHash(
-              record.magicBlockFlow.baseCommitSignature || record.magicBlockFlow.error,
-              14
-            )}
-          </span>
         </div>
       </div>
     );
@@ -877,7 +766,7 @@ function FactList({ items }: { items: Array<[string, string]> }) {
   );
 }
 
-function ReceiptCanvas({ record }: { record: BenchmarkRecord }) {
+function ReceiptCanvas({ record }: { record: GenerationRecord }) {
   const ref = React.useRef<HTMLCanvasElement | null>(null);
 
   React.useEffect(() => {
@@ -895,9 +784,9 @@ function ReceiptCanvas({ record }: { record: BenchmarkRecord }) {
     context.fillStyle = "#111318";
     context.fillRect(0, 0, width, height);
     const hashes = [
-      record.receipt.payload.inputSetHash,
-      record.receipt.payload.outputSetHash,
-      record.receipt.payload.metricsHash,
+      record.receipt.payload.promptHash,
+      record.receipt.payload.outputHash,
+      record.receipt.payload.paramsHash,
       record.receipt.payload.runner.teeEvidenceHash,
       record.receipt.payload.model.commitment,
       record.receipt.digest
@@ -978,84 +867,73 @@ function shortHash(value?: string, length = 12): string {
   return `${value.slice(0, length)}...${value.slice(-length)}`;
 }
 
-function formatPercent(value?: number | null): string {
-  if (value === undefined || value === null) return "pending";
-  return `${Math.round(value * 1000) / 10}%`;
+function previewText(value: string): string {
+  const trimmed = value.trim().replace(/\s+/g, " ");
+  return trimmed.length > 280 ? `${trimmed.slice(0, 280)}...` : trimmed;
 }
 
-function formatMs(value?: number | null): string {
-  if (value === undefined || value === null) return "pending";
-  return `${Math.round(value)} ms`;
+function formatMs(value?: number): string {
+  if (value === undefined || Number.isNaN(value)) return "n/a";
+  if (value < 1000) return `${Math.round(value)} ms`;
+  return `${(value / 1000).toFixed(2)} s`;
 }
 
 function formatDate(value: string): string {
-  return new Date(value).toLocaleString([], {
+  return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit"
-  });
-}
-
-function teeProofLabel(evidence?: TeeEvidenceSummary | null): string {
-  if (!evidence) return "No evidence yet";
-  if (evidence.hardwareModel) return evidence.hardwareModel.replace("GCP_", "");
-  return evidence.attestationStatus;
-}
-
-function hardwareClaim(evidence?: TeeEvidenceSummary | null): string {
-  if (!evidence) return "pending";
-  const boot =
-    evidence.secureBoot === true
-      ? "secure boot on"
-      : evidence.secureBoot === false
-        ? "secure boot off"
-        : "secure boot unknown";
-  return `${evidence.hardwareModel || evidence.attestationStatus} / ${boot}`;
-}
-
-function modelArchitecture(model: ModelInfo | null): string {
-  if (!model) return "loading";
-  const layers = model.architecture.layers;
-  const heads = model.architecture.heads;
-  const width = model.architecture.d_model;
-  return `${layers} layers / ${heads} heads / ${width} width`;
+  }).format(new Date(value));
 }
 
 function verificationLabel(state: VerificationState): string {
   if (state === "valid") return "Signature valid";
-  if (state === "invalid") return "Signature failed";
+  if (state === "invalid") return "Check failed";
   if (state === "checking") return "Checking";
-  return "No receipt";
+  return "Unchecked";
 }
 
-function chainLabel(record: BenchmarkRecord | null): string {
-  if (!record?.solanaCommitment) return "Not anchored";
+function teeProofLabel(evidence?: TeeEvidenceSummary | null): string {
+  if (!evidence) return "No evidence";
+  if (evidence.hardwareModel) return evidence.hardwareModel;
+  if (evidence.attestationStatus === "unavailable") return "Local simulation";
+  return evidence.attestationStatus;
+}
+
+function chainLabel(record?: GenerationRecord | null): string {
+  if (!record?.solanaCommitment) return "Local only";
   if (record.solanaCommitment.status === "confirmed") return "Anchored";
   if (record.solanaCommitment.status === "dry-run") return "Dry run";
-  return "Anchor failed";
+  return "Failed";
 }
 
-function labelTone(label: Label): string {
-  return label.toLowerCase();
+function hardwareClaim(evidence?: TeeEvidenceSummary | null): string {
+  if (!evidence) return "pending";
+  if (evidence.hardwareModel) {
+    return `${evidence.hardwareModel}${evidence.secureBoot ? " secure boot" : ""}`;
+  }
+  return evidence.attestationStatus === "unavailable"
+    ? "local simulation"
+    : evidence.attestationStatus;
 }
 
-function matchLabel(prediction: Prediction): string {
-  if (prediction.correct === null) return "Not supplied";
-  return prediction.correct ? "Matched" : `Expected ${prediction.expected}`;
-}
-
-function humanCaseName(id: string): string {
-  const scenario = SCENARIOS.find((item) => item.id === id);
-  if (scenario) return scenario.title;
-  return id.replace(/[-_]/g, " ");
+function modelArchitecture(model?: ModelInfo | null): string {
+  if (!model) return "pending";
+  const arch = model.architecture;
+  const family = String(arch.family || "model");
+  if (arch.n_layer && arch.n_head && arch.n_embd) {
+    return `${family}; ${arch.n_layer} layers; ${arch.n_head} heads; ${arch.n_embd} hidden`;
+  }
+  return family;
 }
 
 function toError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error) return error.message;
+  return String(error);
 }
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>

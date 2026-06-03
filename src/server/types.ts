@@ -1,53 +1,27 @@
-export type BenchmarkLabel = "APPROVE" | "REVIEW" | "BLOCK" | "INSUFFICIENT";
-
-export interface BenchmarkCase {
-  id?: string;
-  prompt: string;
-  expected?: BenchmarkLabel | string | null;
-}
-
 export interface ModelInfo {
   architecture: Record<string, unknown>;
   commitment: string;
-  labels: BenchmarkLabel[];
   weights_path: string;
   weights_public: boolean;
   meta: Record<string, unknown>;
 }
 
-export interface ModelPrediction {
-  id: string;
-  promptHash: string;
-  prediction: BenchmarkLabel;
-  expected: BenchmarkLabel | null;
-  correct: boolean | null;
-  confidence: number;
-  scores: Record<BenchmarkLabel, number>;
-  latencyMs: number;
-  output: string;
-}
-
-export interface BenchmarkMetrics {
-  caseCount: number;
-  labeledCaseCount: number;
-  accuracy: number | null;
-  avgConfidence: number;
-  totalLatencyMs: number;
-  byLabel: Record<
-    BenchmarkLabel,
-    {
-      predicted: number;
-      expected: number;
-      correct: number;
-    }
-  >;
-}
-
-export interface ModelRunResult {
+export interface GenerationResult {
   ok: true;
   model: ModelInfo;
-  predictions: ModelPrediction[];
-  metrics: BenchmarkMetrics;
+  promptHash: string;
+  output: string;
+  outputHash: string;
+  latencyMs: number;
+  tokenCount: {
+    prompt: number;
+    generated: number;
+  };
+  params: {
+    maxNewTokens: number;
+    temperature: number;
+    topP: number;
+  };
 }
 
 export interface WorkloadMeasurement {
@@ -62,7 +36,7 @@ export interface WorkloadMeasurement {
   config: {
     programId: string;
     solanaRpcUrl: string;
-    magicBlockErRpcUrl: string;
+    llmModelId: string;
     teeMode: string;
     teeProvider: string;
     node: string;
@@ -134,18 +108,25 @@ export interface TeeEvidence {
 }
 
 export interface ReceiptPayload {
-  schema: "private-benchmark-receipt/v1";
-  benchmarkId: string;
+  schema: "private-gpt2-receipt/v1";
+  runId: string;
   issuedAt: string;
-  inputSetHash: string;
-  outputSetHash: string;
-  metricsHash: string;
+  promptHash: string;
+  outputHash: string;
+  paramsHash: string;
   model: {
     commitment: string;
     architecture: Record<string, unknown>;
     weightsPublic: false;
   };
-  metrics: BenchmarkMetrics;
+  generation: {
+    latencyMs: number;
+    tokenCount: {
+      prompt: number;
+      generated: number;
+    };
+    params: GenerationResult["params"];
+  };
   runner: {
     teeMode: string;
     teeProvider: string;
@@ -164,16 +145,18 @@ export interface SignedReceipt {
   algorithm: "Ed25519";
 }
 
-export interface BenchmarkRecord {
+export interface GenerationRecord {
+  kind: "generation";
   id: string;
-  cases: BenchmarkCase[];
-  run: ModelRunResult;
+  prompt: string;
+  generation: GenerationResult;
   receipt: SignedReceipt;
   teeEvidence?: TeeEvidence | null;
   solanaCommitment?: SolanaCommitment | null;
-  magicBlockFlow?: MagicBlockFlow | null;
   createdAt: string;
 }
+
+export type StoredRecord = GenerationRecord;
 
 export interface AuditCheck {
   name: string;
@@ -201,23 +184,5 @@ export interface SolanaCommitment {
   explorerUrl?: string;
   memo: string;
   memoHash: string;
-  error?: string;
-}
-
-export interface MagicBlockFlow {
-  ok: boolean;
-  network: "devnet";
-  erRpcUrl: string;
-  programId: string;
-  payer: string;
-  sessionPda: string;
-  createSignature?: string;
-  delegateSignature?: string;
-  finalizeSignature?: string;
-  commitErSignature?: string;
-  baseCommitSignature?: string;
-  ownerBefore?: string | null;
-  ownerAfterDelegate?: string | null;
-  delegatedOnBase?: boolean;
   error?: string;
 }

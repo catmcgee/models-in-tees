@@ -16,7 +16,7 @@ const measuredDirs = [
   "src/server",
   "src/model",
   "src/web",
-  "programs/private_benchmark/src",
+  "programs/private_gpt_receipts/src",
   "dist-server/src/server",
   "dist/assets"
 ];
@@ -29,9 +29,9 @@ export async function getWorkloadMeasurement(): Promise<WorkloadMeasurement> {
     schema: "tee-ai-workload/v1" as const,
     files,
     config: {
-      programId: config.privateBenchmarkProgramId,
+      programId: config.privateReceiptProgramId,
       solanaRpcUrl: config.solanaRpcUrl,
-      magicBlockErRpcUrl: config.magicBlockErRpcUrl,
+      llmModelId: config.llmModelId,
       teeMode: config.teeMode,
       teeProvider: config.teeProvider,
       node: process.version,

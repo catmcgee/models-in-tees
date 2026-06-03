@@ -259,6 +259,29 @@ a {
   margin-top: 28px;
 }
 
+.preset-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.preset-prompts button {
+  min-height: 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: #f8fafb;
+  color: var(--ink);
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.preset-prompts button.active {
+  border-color: var(--ink);
+  background: var(--acid);
+}
+
 .scenario-tabs button {
   min-height: 88px;
   display: grid;
@@ -326,6 +349,42 @@ a {
   margin-top: 14px;
 }
 
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.range-field {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #fbfcfd;
+  padding: 11px 12px;
+}
+
+.range-field span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.range-field strong {
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 12px;
+}
+
+.range-field input {
+  grid-column: 1 / -1;
+  width: 100%;
+  accent-color: var(--ink);
+}
+
 .expected-select {
   width: min(100%, 220px);
   display: grid;
@@ -382,6 +441,10 @@ a {
   background: #f3f0ff;
 }
 
+.result-panel.generate {
+  background: #eef8f7;
+}
+
 .result-icon {
   width: 54px;
   height: 54px;
@@ -428,6 +491,10 @@ a {
   margin-top: 7px;
   font-size: clamp(44px, 7vw, 78px);
   line-height: 0.9;
+}
+
+.text-result strong {
+  font-size: clamp(38px, 5vw, 66px);
 }
 
 .score-grid {
@@ -594,6 +661,75 @@ a {
   display: grid;
   gap: 10px;
   padding: 14px;
+}
+
+.generated-output {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.prompt-echo {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfcfd;
+  padding: 10px 12px;
+}
+
+.prompt-echo span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.prompt-echo strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 12px;
+}
+
+.generated-output article {
+  min-height: 220px;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: #111318;
+  color: #f8fafb;
+  padding: clamp(16px, 3vw, 26px);
+}
+
+.generated-output article p {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.6;
+  font-size: 17px;
+}
+
+.model-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.model-stats span {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: #fbfcfd;
+  color: var(--muted);
+  padding: 0 10px;
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 12px;
 }
 
 .prediction-row {
@@ -843,6 +979,25 @@ meter {
   line-height: 1.45;
 }
 
+.context-strip {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  margin-top: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 12px 14px;
+  color: #3f474e;
+}
+
+.context-strip p {
+  margin: 0;
+  line-height: 1.45;
+}
+
 @media (max-width: 1100px) {
   .hero-grid,
   .workbench {
@@ -894,6 +1049,7 @@ meter {
 
   .scenario-tabs,
   .how-strip,
+  .control-grid,
   .proof-row,
   .advanced-grid,
   .score-grid {

@@ -73,9 +73,9 @@ export async function commitReceiptToDevnet(
     schema: "tee-ai-devnet-memo/v1",
     receiptDigest: receipt.digest,
     modelCommitment: receipt.payload.model.commitment,
-    inputSetHash: receipt.payload.inputSetHash,
-    outputSetHash: receipt.payload.outputSetHash,
-    metricsHash: receipt.payload.metricsHash,
+    promptHash: receipt.payload.promptHash,
+    outputHash: receipt.payload.outputHash,
+    paramsHash: receipt.payload.paramsHash,
     teeEvidenceHash: receipt.payload.runner.teeEvidenceHash || null,
     issuedAt: receipt.payload.issuedAt
   };

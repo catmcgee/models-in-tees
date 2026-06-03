@@ -7,10 +7,11 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { auditReceiptEvidence } from "./audit.js";
 import { config, rootDir } from "./config.js";
-import { getMagicBlockStatus } from "./magicblock.js";
-import { runMagicBlockReceiptFlow } from "./magicblockProgram.js";
-import { bootstrapModel, getModelInfo, runBenchmarkCases } from "./modelRunner.js";
-import { createSignedReceipt, verifySignedReceipt } from "./receipts.js";
+import { generateText, getLlmInfo } from "./modelRunner.js";
+import {
+  createSignedGenerationReceipt,
+  verifySignedReceipt
+} from "./receipts.js";
 import { commitReceiptToDevnet, getSolanaStatus } from "./solana.js";
 import { getRecord, listRecords, saveRecord } from "./store.js";
 import {
@@ -18,16 +19,14 @@ import {
   redactTeeEvidence,
   summarizeTeeEvidence
 } from "./teeEvidence.js";
-import type { BenchmarkCase, BenchmarkRecord, SignedReceipt } from "./types.js";
+import type { SignedReceipt, StoredRecord } from "./types.js";
 
-const caseSchema = z.object({
-  id: z.string().min(1).max(80).optional(),
-  prompt: z.string().min(8).max(2400),
-  expected: z.string().min(1).max(40).nullable().optional()
-});
-
-const benchmarkSchema = z.object({
-  cases: z.array(caseSchema).min(1).max(64)
+const generateSchema = z.object({
+  prompt: z.string().min(1).max(1800),
+  maxNewTokens: z.number().int().min(8).max(180).default(80),
+  temperature: z.number().min(0.1).max(1.5).default(0.75),
+  topP: z.number().min(0.1).max(1).default(0.92),
+  seed: z.number().int().optional()
 });
 
 export function createApp(): express.Express {
@@ -39,54 +38,41 @@ export function createApp(): express.Express {
   app.get("/api/health", (_req, res) => {
     res.json({
       ok: true,
-      service: "tee-ai-private-benchmark",
+      service: "tee-ai-private-gpt2",
       teeMode: config.teeMode,
       network: "devnet"
     });
   });
 
-  app.post("/api/model/bootstrap", async (req, res) => {
+  app.get("/api/llm", async (_req, res) => {
     try {
-      if (!config.allowModelBootstrap) {
-        res.status(403).json({
-          ok: false,
-          error: "Model bootstrap is disabled. Set ALLOW_MODEL_BOOTSTRAP=1 to enable it."
-        });
-        return;
-      }
-      const result = await bootstrapModel(req.query.force === "1");
-      res.json(result);
+      res.json({ ok: true, model: await getLlmInfo() });
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  app.get("/api/model", async (_req, res) => {
+  app.post("/api/generate", async (req, res) => {
     try {
-      res.json({ ok: true, model: await getModelInfo() });
-    } catch (error) {
-      sendError(res, error);
-    }
-  });
-
-  app.post("/api/benchmark", async (req, res) => {
-    try {
-      const parsed = benchmarkSchema.parse(req.body);
-      const cases = parsed.cases as BenchmarkCase[];
-      const run = await runBenchmarkCases(cases);
-      const id = `bench-${Date.now().toString(36)}-${Math.random()
+      const parsed = generateSchema.parse(req.body);
+      const generation = await generateText(parsed);
+      const id = `gen-${Date.now().toString(36)}-${Math.random()
         .toString(36)
         .slice(2, 8)}`;
       const teeEvidence = await getTeeEvidence({ includeToken: true });
-      const receipt = createSignedReceipt(id, cases, run, teeEvidence);
-      const record = saveRecord({
+      const receipt = createSignedGenerationReceipt(
         id,
-        cases,
-        run,
+        generation,
+        teeEvidence
+      );
+      const record = saveRecord({
+        kind: "generation",
+        id,
+        prompt: parsed.prompt,
+        generation,
         receipt,
         teeEvidence,
         solanaCommitment: null,
-        magicBlockFlow: null,
         createdAt: new Date().toISOString()
       });
       res.json({ ok: true, record: publicRecord(record) });
@@ -199,22 +185,6 @@ export function createApp(): express.Express {
     }
   });
 
-  app.post("/api/receipts/:id/magicblock", async (req, res) => {
-    try {
-      const record = getRecord(req.params.id);
-      if (!record) {
-        res.status(404).json({ ok: false, error: "Receipt not found" });
-        return;
-      }
-      const magicBlockFlow = await runMagicBlockReceiptFlow(record.receipt);
-      record.magicBlockFlow = magicBlockFlow;
-      saveRecord(record);
-      res.json({ ok: magicBlockFlow.ok, magicBlockFlow, record: publicRecord(record) });
-    } catch (error) {
-      sendError(res, error);
-    }
-  });
-
   app.post("/api/verify", (req, res) => {
     const receipt = req.body?.receipt as SignedReceipt | undefined;
     if (!receipt) {
@@ -241,14 +211,6 @@ export function createApp(): express.Express {
   app.get("/api/solana/status", async (_req, res) => {
     try {
       res.json({ ok: true, solana: await getSolanaStatus() });
-    } catch (error) {
-      sendError(res, error);
-    }
-  });
-
-  app.get("/api/magicblock/status", async (_req, res) => {
-    try {
-      res.json({ ok: true, magicblock: await getMagicBlockStatus() });
     } catch (error) {
       sendError(res, error);
     }
@@ -282,7 +244,7 @@ function stringParam(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function publicRecord(record: BenchmarkRecord): Omit<BenchmarkRecord, "teeEvidence"> {
+function publicRecord<T extends StoredRecord>(record: T): Omit<T, "teeEvidence"> {
   const { teeEvidence: _teeEvidence, ...safeRecord } = record;
   return safeRecord;
 }

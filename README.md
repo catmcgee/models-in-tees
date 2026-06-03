@@ -1,24 +1,23 @@
 # Private Model Verifier
 
-Private Model Verifier is a public test harness for a private neural model.
-Users submit policy-style requests, a hidden PyTorch transformer classifier runs
-the request, and the API returns a signed receipt that binds the input, output,
+Private Model Verifier is a public test harness for a private GPT-2-style model.
+Users submit prompts, a hidden PyTorch/Hugging Face GPT-2 runner generates text,
+and the API returns a signed receipt that binds the prompt hash, output hash,
 model commitment, TEE evidence, and optional Solana devnet timestamp.
 
-The demo is intentionally small. It is not a full LLM and it is not a ZK proof
-system. The privacy claim comes from keeping weights and receipt keys outside
-the public source tree and, in production-style deployments, running the API in a
-hardware-backed TEE such as a Google Confidential VM.
+The demo is not a ZK proof system. The privacy claim comes from keeping model
+weights and receipt keys outside the public source tree and, in
+production-style deployments, running the API in a hardware-backed TEE such as a
+Google Confidential VM.
 
 ## What Runs
 
 - Frontend: Vite + React verifier demo
 - API: Express + TypeScript
-- Model runner: PyTorch tiny transformer classifier
+- Model runner: GPT-2 causal language model
 - Receipt protocol: canonical JSON + Ed25519 signatures
 - TEE evidence: Google Confidential VM attestation token when available
 - Chain commit: Solana devnet Anchor program, with Memo fallback
-- MagicBlock: devnet Ephemeral Rollup delegation/finalize/commit flow
 
 ## Private Artifacts
 
@@ -35,9 +34,9 @@ target/deploy/*-keypair.json
 .env
 ```
 
-The app generates model weights, receipt signing keys, Solana devnet payer keys,
-and stored benchmark evidence under `private/`. Keep that directory local or on
-the protected VM only.
+The app downloads/caches GPT-2 files, generates receipt signing keys, Solana
+devnet payer keys, and stored evidence under `private/`. Keep that directory
+local or on the protected VM only.
 
 ## Setup
 
@@ -46,8 +45,8 @@ npm install
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
-npm run model:bootstrap
-anchor build
+npm run llm:test
+anchor build --ignore-keys
 ```
 
 Copy `.env.example` to `.env` for local overrides. Do not commit `.env`.
@@ -67,13 +66,12 @@ The API listens on `http://127.0.0.1:8787`.
 ```bash
 npm test
 npm run chain:test
-npm run magicblock:test
 ```
 
 `npm test` runs the model self-test, TypeScript checks, production frontend
 build, and API smoke test. `chain:test` submits a live devnet receipt.
-`magicblock:test` delegates a receipt session to MagicBlock devnet, finalizes on
-the Ephemeral Rollup, and commits back to base layer.
+`llm:test` downloads/loads the configured GPT-2 model and prints its private
+model commitment.
 
 ## Vercel Frontend
 
@@ -95,23 +93,20 @@ empty and Vite will proxy `/api` to `http://127.0.0.1:8787`.
 
 ```text
 GET  /api/health
-GET  /api/model
+GET  /api/llm
 GET  /api/tee/evidence
-POST /api/benchmark
+POST /api/generate
 POST /api/verify
 POST /api/audit
 GET  /api/solana/status
-GET  /api/magicblock/status
 GET  /api/receipts/:id
 GET  /api/receipts/:id/evidence
 GET  /api/receipts/:id/audit
 POST /api/receipts/:id/commit
-POST /api/receipts/:id/magicblock
 ```
 
 Production defaults are conservative:
 
-- `ALLOW_MODEL_BOOTSTRAP=0` prevents public retraining.
 - `ALLOW_RAW_TEE_EVIDENCE=0` redacts raw attestation tokens/reports from public
   responses.
 - `ALLOW_PUBLIC_RECEIPT_LISTING=0` prevents listing all stored receipts.
@@ -121,7 +116,8 @@ Set an override to `1` only when you explicitly want that behavior.
 ## Solana Devnet
 
 The default Anchor program id is configured in `Anchor.toml`,
-`programs/private_benchmark/src/lib.rs`, and `PRIVATE_BENCHMARK_PROGRAM_ID`.
+`programs/private_gpt_receipts/src/lib.rs`, and
+`PRIVATE_GPT_RECEIPT_PROGRAM_ID`.
 Override it when deploying your own program.
 
 The server creates a devnet payer at:

@@ -1,54 +1,50 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { modelDir, rootDir } from "./config.js";
-import type { BenchmarkCase, ModelInfo, ModelRunResult } from "./types.js";
+import { config, hfDir, llmDir, rootDir } from "./config.js";
+import type { GenerationResult, ModelInfo } from "./types.js";
 
 const venvPython = path.join(rootDir, ".venv", "bin", "python");
 const pythonBinary = fs.existsSync(venvPython) ? venvPython : "python3";
 const runnerPath = path.join(rootDir, "src", "model", "model_runner.py");
 
-export async function getModelInfo(): Promise<ModelInfo> {
-  const result = await runPython("info", {});
+export async function getLlmInfo(): Promise<ModelInfo> {
+  const result = await runPython("llm-info", {});
   if (!result.ok || !result.info) {
-    throw new Error(result.error || "Model info failed");
+    throw new Error(result.error || "GPT-2 info failed");
   }
   return result.info as ModelInfo;
 }
 
-export async function runBenchmarkCases(
-  cases: BenchmarkCase[]
-): Promise<ModelRunResult> {
-  const result = await runPython("run", { cases });
+export async function generateText(payload: {
+  prompt: string;
+  maxNewTokens?: number;
+  temperature?: number;
+  topP?: number;
+  seed?: number;
+}): Promise<GenerationResult> {
+  const result = await runPython("generate", payload);
   if (!result.ok) {
-    throw new Error(result.error || "Model run failed");
+    throw new Error(result.error || "GPT-2 generation failed");
   }
-  return result as ModelRunResult;
-}
-
-export async function bootstrapModel(force = false): Promise<Record<string, unknown>> {
-  const args = force ? ["bootstrap", "--force"] : ["bootstrap"];
-  return runPythonWithArgs(args, {});
+  return result as GenerationResult;
 }
 
 async function runPython(
-  command: "info" | "run" | "selftest",
-  payload: Record<string, unknown>
-): Promise<any> {
-  return runPythonWithArgs([command], payload);
-}
-
-async function runPythonWithArgs(
-  args: string[],
+  command: "llm-info" | "generate" | "selftest",
   payload: Record<string, unknown>
 ): Promise<any> {
   return new Promise((resolve, reject) => {
-    fs.mkdirSync(modelDir, { recursive: true });
-    const child = spawn(pythonBinary, [runnerPath, ...args], {
+    fs.mkdirSync(llmDir, { recursive: true });
+    fs.mkdirSync(hfDir, { recursive: true });
+    const child = spawn(pythonBinary, [runnerPath, command], {
       cwd: rootDir,
       env: {
         ...process.env,
-        TEE_AI_MODEL_DIR: modelDir
+        TEE_AI_LLM_DIR: llmDir,
+        TEE_AI_LLM_MODEL_ID: config.llmModelId,
+        HF_HOME: hfDir,
+        HF_HUB_DISABLE_XET: process.env.HF_HUB_DISABLE_XET || "1"
       },
       stdio: ["pipe", "pipe", "pipe"]
     });
