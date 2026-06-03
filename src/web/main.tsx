@@ -289,6 +289,7 @@ function App() {
 
   const activeTeeEvidence = activeRecord?.receipt.payload.runner.teeEvidence || teeEvidence;
   const activeModel = activeRecord?.generation.model || model;
+  const hasVisibleConversation = !!activeRecord || busy === "Running GPT-2";
   const proofItems = [
     {
       label: "Model",
@@ -351,157 +352,144 @@ function App() {
             </p>
           </div>
 
-          <div className="chat-window" aria-live="polite">
-            <article className="chat-message system-message">
-              <div className="chat-avatar">TEE</div>
-              <div className="chat-bubble">
-                <strong>Private GPT-2 runner is the assistant.</strong>
-                <p>
-                  The browser sends prompts to the TEE-backed API. The model
-                  weights stay off the frontend; the response and proof details
-                  appear together.
-                </p>
-              </div>
-            </article>
-
-            {activeRecord ? (
-              <>
-                <article className="chat-message user-message">
-                  <div className="chat-avatar">You</div>
-                  <div className="chat-bubble">
-                    <p>{activeRecord.prompt}</p>
-                  </div>
-                </article>
-
-                <article className="chat-message assistant-message">
-                  <div className="chat-avatar">GPT-2</div>
-                  <div className="chat-bubble">
-                    <p>{activeRecord.generation.output}</p>
-                    <div className="bubble-meta">
-                      <span>{activeRecord.generation.tokenCount.generated} tokens</span>
-                      <span>{formatMs(activeRecord.generation.latencyMs)}</span>
-                      <span>{shortHash(activeRecord.receipt.digest, 8)}</span>
-                    </div>
-                  </div>
-                </article>
-              </>
-            ) : (
-              <article className="chat-message assistant-message muted-message">
-                <div className="chat-avatar">GPT-2</div>
-                <div className="chat-bubble">
-                  <p>Pick a starter prompt or type your own message to create the first signed response.</p>
-                </div>
-              </article>
-            )}
-
-            {busy === "Running GPT-2" && (
-              <article className="chat-message assistant-message">
-                <div className="chat-avatar">
-                  <Loader2 className="spin" size={16} />
-                </div>
-                <div className="chat-bubble thinking-bubble">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              </article>
-            )}
-          </div>
-
-          <div className="preset-prompts" aria-label="Sample prompts">
-            {SAMPLE_PROMPTS.map((sample, index) => (
-              <button
-                type="button"
-                key={sample}
-                onClick={() => setPrompt(sample)}
-                className={prompt === sample ? "active" : ""}
-              >
-                Prompt {index + 1}
-              </button>
-            ))}
-          </div>
-
-          <form className="chat-composer" onSubmit={submitPrompt}>
-            <label className="composer-label" htmlFor="chat-prompt">
-              Message to private GPT-2
-            </label>
-            <textarea
-              id="chat-prompt"
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              onKeyDown={handleComposerKeyDown}
-            />
-            <button
-              className="primary-button send-button"
-              type="submit"
-              disabled={!!busy || prompt.trim().length < 1}
+          <div className="chat-shell">
+            <div
+              className={`chat-window ${hasVisibleConversation ? "has-messages" : "empty"}`}
+              aria-live="polite"
             >
-              <Send size={18} />
-              <span>Send</span>
-            </button>
-          </form>
+              {activeRecord && (
+                <>
+                  <article className="chat-message user-message">
+                    <div className="chat-avatar">You</div>
+                    <div className="chat-bubble">
+                      <p>{activeRecord.prompt}</p>
+                    </div>
+                  </article>
 
-          <details className="sampling-controls">
-            <summary>
-              <SlidersHorizontal size={16} />
-              <span>Sampling controls</span>
-            </summary>
-            <div className="control-grid">
-              <label className="range-field">
-                <span>New tokens</span>
-                <strong>{maxNewTokens}</strong>
-                <input
-                  type="range"
-                  min={16}
-                  max={180}
-                  step={4}
-                  value={maxNewTokens}
-                  onChange={(event) => setMaxNewTokens(Number(event.target.value))}
-                />
-              </label>
-              <label className="range-field">
-                <span>Temperature</span>
-                <strong>{temperature.toFixed(2)}</strong>
-                <input
-                  type="range"
-                  min={0.1}
-                  max={1.5}
-                  step={0.05}
-                  value={temperature}
-                  onChange={(event) => setTemperature(Number(event.target.value))}
-                />
-              </label>
-              <label className="range-field">
-                <span>Top-p</span>
-                <strong>{topP.toFixed(2)}</strong>
-                <input
-                  type="range"
-                  min={0.1}
-                  max={1}
-                  step={0.05}
-                  value={topP}
-                  onChange={(event) => setTopP(Number(event.target.value))}
-                />
-              </label>
+                  <article className="chat-message assistant-message">
+                    <div className="chat-avatar">GPT-2</div>
+                    <div className="chat-bubble">
+                      <p>{activeRecord.generation.output}</p>
+                      <div className="bubble-meta">
+                        <span>{activeRecord.generation.tokenCount.generated} tokens</span>
+                        <span>{formatMs(activeRecord.generation.latencyMs)}</span>
+                        <span>{shortHash(activeRecord.receipt.digest, 8)}</span>
+                      </div>
+                    </div>
+                  </article>
+                </>
+              )}
+
+              {busy === "Running GPT-2" && (
+                <article className="chat-message assistant-message">
+                  <div className="chat-avatar">
+                    <Loader2 className="spin" size={16} />
+                  </div>
+                  <div className="chat-bubble thinking-bubble">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                </article>
+              )}
             </div>
-          </details>
 
-          {records.length > 0 && (
-            <div className="recent-runs" aria-label="Recent signed responses">
-              <span>Recent receipts</span>
-              {records.slice(0, 3).map((record) => (
+            <div className="preset-prompts" aria-label="Sample prompts">
+              {SAMPLE_PROMPTS.map((sample, index) => (
                 <button
                   type="button"
-                  key={record.id}
-                  className={record.id === activeRecord?.id ? "active" : ""}
-                  onClick={() => setActiveRecord(record)}
+                  key={sample}
+                  onClick={() => setPrompt(sample)}
+                  className={prompt === sample ? "active" : ""}
                 >
-                  <strong>{shortHash(record.receipt.digest, 6)}</strong>
-                  <small>{record.generation.tokenCount.generated} tokens</small>
+                  Prompt {index + 1}
                 </button>
               ))}
             </div>
-          )}
+
+            <form className="chat-composer" onSubmit={submitPrompt}>
+              <label className="composer-label" htmlFor="chat-prompt">
+                Message to private GPT-2
+              </label>
+              <textarea
+                id="chat-prompt"
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                onKeyDown={handleComposerKeyDown}
+                placeholder="Ask GPT-2 something..."
+              />
+              <button
+                className="primary-button send-button"
+                type="submit"
+                disabled={!!busy || prompt.trim().length < 1}
+              >
+                <Send size={18} />
+                <span>Send</span>
+              </button>
+            </form>
+
+            <details className="sampling-controls">
+              <summary>
+                <SlidersHorizontal size={16} />
+                <span>Sampling controls</span>
+              </summary>
+              <div className="control-grid">
+                <label className="range-field">
+                  <span>New tokens</span>
+                  <strong>{maxNewTokens}</strong>
+                  <input
+                    type="range"
+                    min={16}
+                    max={180}
+                    step={4}
+                    value={maxNewTokens}
+                    onChange={(event) => setMaxNewTokens(Number(event.target.value))}
+                  />
+                </label>
+                <label className="range-field">
+                  <span>Temperature</span>
+                  <strong>{temperature.toFixed(2)}</strong>
+                  <input
+                    type="range"
+                    min={0.1}
+                    max={1.5}
+                    step={0.05}
+                    value={temperature}
+                    onChange={(event) => setTemperature(Number(event.target.value))}
+                  />
+                </label>
+                <label className="range-field">
+                  <span>Top-p</span>
+                  <strong>{topP.toFixed(2)}</strong>
+                  <input
+                    type="range"
+                    min={0.1}
+                    max={1}
+                    step={0.05}
+                    value={topP}
+                    onChange={(event) => setTopP(Number(event.target.value))}
+                  />
+                </label>
+              </div>
+            </details>
+
+            {records.length > 0 && (
+              <div className="recent-runs" aria-label="Recent signed responses">
+                <span>Recent receipts</span>
+                {records.slice(0, 3).map((record) => (
+                  <button
+                    type="button"
+                    key={record.id}
+                    className={record.id === activeRecord?.id ? "active" : ""}
+                    onClick={() => setActiveRecord(record)}
+                  >
+                    <strong>{shortHash(record.receipt.digest, 6)}</strong>
+                    <small>{record.generation.tokenCount.generated} tokens</small>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </section>
       </header>
 

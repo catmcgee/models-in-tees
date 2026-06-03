@@ -177,8 +177,8 @@ a {
 
 .chat-panel {
   display: grid;
-  grid-template-rows: auto minmax(260px, 1fr) auto auto auto auto;
-  gap: 14px;
+  grid-template-rows: auto minmax(260px, 1fr);
+  gap: 16px;
 }
 
 .chat-hero {
@@ -214,19 +214,34 @@ a {
   line-height: 1.45;
 }
 
+.chat-shell {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(220px, 1fr) auto auto auto auto;
+  gap: 10px;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 10px;
+}
+
 .chat-window {
-  min-height: clamp(360px, 45vh, 560px);
+  min-height: clamp(260px, 38vh, 520px);
   display: grid;
   align-content: start;
   gap: 12px;
-  border: 1px solid var(--ink);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
   background:
     linear-gradient(rgba(17, 19, 24, 0.035) 1px, transparent 1px),
-    #fbfcfd;
+    #ffffff;
   background-size: 100% 34px;
   padding: 14px;
   overflow-y: auto;
+}
+
+.chat-window.empty {
+  display: none;
 }
 
 .chat-message {
@@ -266,10 +281,6 @@ a {
 
 .assistant-message .chat-avatar {
   background: #dff3fb;
-}
-
-.system-message .chat-avatar {
-  background: #ffe2b7;
 }
 
 .chat-bubble {
@@ -361,8 +372,8 @@ a {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: end;
-  border: 1px solid var(--ink);
-  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
   background: #ffffff;
   padding: 10px;
 }
@@ -517,7 +528,6 @@ a {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 24px;
 }
 
 .preset-prompts button {
@@ -1183,8 +1193,12 @@ meter {
   }
 
   .chat-window {
-    min-height: 330px;
+    min-height: 260px;
     padding: 10px;
+  }
+
+  .chat-window.empty {
+    display: none;
   }
 
   .chat-message,
