@@ -141,15 +141,8 @@ interface SolanaStatus {
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
-const SAMPLE_PROMPTS = [
-  "OpenAI wants to let the public test GPT-2, but the checkpoint has to stay private. Explain how a TEE receipt helps.",
-  "Write a short product note for a private model evaluation marketplace on Solana.",
-  "A user asks the private model to summarize confidential telemetry. Describe what the public should be able to verify.",
-  "Explain the difference between keeping model weights private and proving a model output was signed by a trusted runner."
-];
-
 function App() {
-  const [prompt, setPrompt] = React.useState(SAMPLE_PROMPTS[0]);
+  const [prompt, setPrompt] = React.useState("");
   const [maxNewTokens, setMaxNewTokens] = React.useState(80);
   const [temperature, setTemperature] = React.useState(0.75);
   const [topP, setTopP] = React.useState(0.92);
@@ -353,59 +346,45 @@ function App() {
           </div>
 
           <div className="chat-shell">
-            <div
-              className={`chat-window ${hasVisibleConversation ? "has-messages" : "empty"}`}
-              aria-live="polite"
-            >
-              {activeRecord && (
-                <>
-                  <article className="chat-message user-message">
-                    <div className="chat-avatar">You</div>
-                    <div className="chat-bubble">
-                      <p>{activeRecord.prompt}</p>
-                    </div>
-                  </article>
-
-                  <article className="chat-message assistant-message">
-                    <div className="chat-avatar">GPT-2</div>
-                    <div className="chat-bubble">
-                      <p>{activeRecord.generation.output}</p>
-                      <div className="bubble-meta">
-                        <span>{activeRecord.generation.tokenCount.generated} tokens</span>
-                        <span>{formatMs(activeRecord.generation.latencyMs)}</span>
-                        <span>{shortHash(activeRecord.receipt.digest, 8)}</span>
+            {hasVisibleConversation && (
+              <div className="chat-window" aria-live="polite">
+                {activeRecord && (
+                  <>
+                    <article className="chat-message user-message">
+                      <div className="chat-avatar">You</div>
+                      <div className="chat-bubble">
+                        <p>{activeRecord.prompt}</p>
                       </div>
+                    </article>
+
+                    <article className="chat-message assistant-message">
+                      <div className="chat-avatar">GPT-2</div>
+                      <div className="chat-bubble">
+                        <p>{activeRecord.generation.output}</p>
+                        <div className="bubble-meta">
+                          <span>{activeRecord.generation.tokenCount.generated} tokens</span>
+                          <span>{formatMs(activeRecord.generation.latencyMs)}</span>
+                          <span>{shortHash(activeRecord.receipt.digest, 8)}</span>
+                        </div>
+                      </div>
+                    </article>
+                  </>
+                )}
+
+                {busy === "Running GPT-2" && (
+                  <article className="chat-message assistant-message">
+                    <div className="chat-avatar">
+                      <Loader2 className="spin" size={16} />
+                    </div>
+                    <div className="chat-bubble thinking-bubble">
+                      <span />
+                      <span />
+                      <span />
                     </div>
                   </article>
-                </>
-              )}
-
-              {busy === "Running GPT-2" && (
-                <article className="chat-message assistant-message">
-                  <div className="chat-avatar">
-                    <Loader2 className="spin" size={16} />
-                  </div>
-                  <div className="chat-bubble thinking-bubble">
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                </article>
-              )}
-            </div>
-
-            <div className="preset-prompts" aria-label="Sample prompts">
-              {SAMPLE_PROMPTS.map((sample, index) => (
-                <button
-                  type="button"
-                  key={sample}
-                  onClick={() => setPrompt(sample)}
-                  className={prompt === sample ? "active" : ""}
-                >
-                  Prompt {index + 1}
-                </button>
-              ))}
-            </div>
+                )}
+              </div>
+            )}
 
             <form className="chat-composer" onSubmit={submitPrompt}>
               <label className="composer-label" htmlFor="chat-prompt">

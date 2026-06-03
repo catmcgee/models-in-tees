@@ -172,17 +172,16 @@ a {
 .experiment-panel,
 .chat-panel {
   padding: clamp(18px, 3vw, 34px);
-  min-height: 540px;
 }
 
 .chat-panel {
   display: grid;
-  grid-template-rows: auto minmax(260px, 1fr);
+  grid-template-rows: auto auto;
   gap: 16px;
 }
 
 .chat-hero {
-  min-height: min(760px, calc(100vh - 118px));
+  min-height: 0;
 }
 
 .eyebrow,
@@ -217,7 +216,6 @@ a {
 .chat-shell {
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(220px, 1fr) auto auto auto auto;
   gap: 10px;
   border: 1px solid var(--ink);
   border-radius: 8px;
@@ -238,10 +236,6 @@ a {
   background-size: 100% 34px;
   padding: 14px;
   overflow-y: auto;
-}
-
-.chat-window.empty {
-  display: none;
 }
 
 .chat-message {
@@ -522,28 +516,6 @@ a {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-top: 28px;
-}
-
-.preset-prompts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.preset-prompts button {
-  min-height: 34px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: #f8fafb;
-  color: var(--ink);
-  padding: 0 12px;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.preset-prompts button.active {
-  border-color: var(--ink);
-  background: var(--acid);
 }
 
 .scenario-tabs button {
@@ -1195,10 +1167,6 @@ meter {
   .chat-window {
     min-height: 260px;
     padding: 10px;
-  }
-
-  .chat-window.empty {
-    display: none;
   }
 
   .chat-message,
