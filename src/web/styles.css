@@ -1,0 +1,496 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b0d0f;
+  --panel: #15191d;
+  --panel-strong: #1d2328;
+  --line: #30383e;
+  --text: #f7f0de;
+  --muted: #9ba5a8;
+  --green: #c6ff5f;
+  --blue: #4ecdc4;
+  --amber: #f5b942;
+  --red: #ff6b57;
+  --ink: #d9d6ff;
+  --shadow: rgba(0, 0, 0, 0.42);
+  font-family: "Avenir Next", "Gill Sans", "Trebuchet MS", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    var(--bg);
+  background-size: 28px 28px;
+  color: var(--text);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+a {
+  color: var(--green);
+}
+
+.shell {
+  width: min(1500px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 18px 0 28px;
+}
+
+.topbar {
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand-mark {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  background: var(--text);
+  color: var(--bg);
+  border: 2px solid var(--green);
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.1;
+  font-weight: 800;
+}
+
+.topbar p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.icon-button,
+.primary-button,
+.secondary-button,
+.ghost-button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel-strong);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.primary-button {
+  border-color: var(--green);
+  background: var(--green);
+  color: #111510;
+  font-weight: 800;
+}
+
+.secondary-button {
+  color: var(--green);
+}
+
+.ghost-button {
+  background: transparent;
+  color: var(--muted);
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.button-row,
+.commit-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error-strip {
+  margin-top: 14px;
+  border: 1px solid rgba(255, 107, 87, 0.55);
+  background: rgba(255, 107, 87, 0.12);
+  color: #ffd8d1;
+  padding: 10px 12px;
+  border-radius: 4px;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.metric-tile {
+  min-height: 82px;
+  border: 1px solid var(--line);
+  background: rgba(21, 25, 29, 0.94);
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  grid-template-rows: 24px 1fr;
+  align-items: center;
+  gap: 2px 10px;
+  padding: 14px;
+  box-shadow: 0 12px 28px var(--shadow);
+}
+
+.metric-tile div {
+  grid-row: 1 / span 2;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid currentColor;
+}
+
+.metric-tile span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.metric-tile strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 16px;
+}
+
+.metric-tile.green {
+  color: var(--green);
+}
+
+.metric-tile.blue {
+  color: var(--blue);
+}
+
+.metric-tile.amber {
+  color: var(--amber);
+}
+
+.metric-tile.ink {
+  color: var(--ink);
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) minmax(420px, 1fr) minmax(310px, 390px);
+  gap: 12px;
+  align-items: start;
+}
+
+.left-rail,
+.right-rail {
+  display: grid;
+  gap: 12px;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  background: rgba(21, 25, 29, 0.96);
+  box-shadow: 0 18px 34px var(--shadow);
+}
+
+.panel-heading {
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 12px;
+}
+
+.panel-heading h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.pill,
+.verify-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  border: 1px solid var(--line);
+  padding: 0 8px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.verify-badge.valid {
+  color: var(--green);
+  border-color: rgba(198, 255, 95, 0.45);
+}
+
+.verify-badge.invalid {
+  color: var(--red);
+  border-color: rgba(255, 107, 87, 0.45);
+}
+
+.fact-list {
+  margin: 0;
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.fact-list div {
+  min-width: 0;
+}
+
+.fact-list dt {
+  color: var(--muted);
+  font-size: 11px;
+  margin-bottom: 5px;
+}
+
+.fact-list dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.fact-list.compact {
+  gap: 10px;
+}
+
+.bench-panel {
+  min-height: 640px;
+}
+
+.case-stack {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.case-card,
+.prediction-card {
+  border: 1px solid var(--line);
+  background: #101417;
+  border-radius: 4px;
+}
+
+.case-topline {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 150px auto;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.case-card input,
+.case-card select,
+.case-card textarea {
+  width: 100%;
+  border: 1px solid #3a444b;
+  background: #0c0f11;
+  color: var(--text);
+  border-radius: 3px;
+}
+
+.case-card input,
+.case-card select {
+  min-height: 34px;
+  padding: 0 9px;
+}
+
+.case-card textarea {
+  min-height: 88px;
+  resize: vertical;
+  padding: 10px;
+  line-height: 1.45;
+}
+
+.receipt-canvas {
+  display: block;
+  width: calc(100% - 24px);
+  height: 154px;
+  margin: 12px;
+  border: 1px solid var(--line);
+  background: #101417;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.commit-row {
+  justify-content: space-between;
+  padding: 0 12px 12px;
+}
+
+.chain-result {
+  min-height: 40px;
+  margin: 0 12px 12px;
+  display: grid;
+  grid-template-columns: 20px auto 1fr;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  padding: 8px;
+  font-size: 12px;
+}
+
+.chain-result.confirmed {
+  border-color: rgba(198, 255, 95, 0.45);
+}
+
+.chain-result.failed {
+  border-color: rgba(255, 107, 87, 0.45);
+}
+
+.chain-result code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.prediction-stack {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  max-height: 396px;
+  overflow: auto;
+}
+
+.prediction-card {
+  display: grid;
+  grid-template-columns: 1fr minmax(104px, 132px);
+  gap: 10px;
+  padding: 10px;
+}
+
+.prediction-card.correct {
+  border-left: 3px solid var(--green);
+}
+
+.prediction-card.miss {
+  border-left: 3px solid var(--red);
+}
+
+.prediction-card strong {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 13px;
+}
+
+.prediction-card span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.prediction-score {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.prediction-score span {
+  color: var(--text);
+  font-family: "SF Mono", "Menlo", monospace;
+}
+
+meter {
+  width: 100%;
+  height: 10px;
+}
+
+.empty-state {
+  height: 220px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+@media (max-width: 1180px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .left-rail,
+  .right-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .shell {
+    width: min(100% - 20px, 1500px);
+    padding-top: 10px;
+  }
+
+  .topbar {
+    grid-template-columns: 42px 1fr;
+  }
+
+  .topbar .icon-button {
+    grid-column: 1 / -1;
+  }
+
+  .status-grid,
+  .left-rail,
+  .right-rail {
+    grid-template-columns: 1fr;
+  }
+
+  .case-topline,
+  .prediction-card {
+    grid-template-columns: 1fr;
+  }
+}
