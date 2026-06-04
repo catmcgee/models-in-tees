@@ -2,21 +2,18 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import {
   AlertTriangle,
+  Anchor,
   ArrowUpRight,
   BadgeCheck,
   CheckCircle2,
   ChevronDown,
-  Database,
-  FileCheck2,
-  Fingerprint,
-  KeyRound,
+  Cpu,
   Loader2,
   Lock,
   RefreshCcw,
   Send,
   ShieldCheck,
   SlidersHorizontal,
-  WalletCards,
   XCircle
 } from "lucide-react";
 import "./styles.css";
@@ -155,6 +152,8 @@ function App() {
   const [busy, setBusy] = React.useState<string | null>("Loading");
   const [error, setError] = React.useState<string | null>(null);
   const [dryRunCommit, setDryRunCommit] = React.useState(false);
+  const [samplingOpen, setSamplingOpen] = React.useState(false);
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [verification, setVerification] =
     React.useState<VerificationState>("unchecked");
 
@@ -207,7 +206,9 @@ function App() {
     try {
       const [modelBody, receiptsBody, solanaBody, teeBody] = await Promise.all([
         apiGet<{ model: ModelInfo }>("/api/llm").catch(() => null),
-        apiGet<{ records: GenerationRecord[] }>("/api/receipts"),
+        apiGet<{ records: GenerationRecord[] }>("/api/receipts").catch(
+          () => ({ records: [] as GenerationRecord[] })
+        ),
         apiGet<{ solana: SolanaStatus }>("/api/solana/status").catch(() => null),
         apiGet<{ summary: TeeEvidenceSummary }>("/api/tee/evidence").catch(() => null)
       ]);
@@ -223,8 +224,13 @@ function App() {
     }
   }
 
-  function submitPrompt(event?: React.FormEvent<HTMLFormElement>) {
-    event?.preventDefault();
+  function refresh() {
+    setActiveRecord(null);
+    setPrompt("");
+    refreshAll();
+  }
+
+  function send() {
     if (busy || prompt.trim().length < 1) return;
     runGeneration();
   }
@@ -232,7 +238,7 @@ function App() {
   function handleComposerKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      submitPrompt();
+      send();
     }
   }
 
@@ -280,534 +286,521 @@ function App() {
     }
   }
 
+  const running = busy === "Running GPT-2";
   const activeTeeEvidence = activeRecord?.receipt.payload.runner.teeEvidence || teeEvidence;
   const activeModel = activeRecord?.generation.model || model;
-  const hasVisibleConversation = !!activeRecord || busy === "Running GPT-2";
-  const proofItems = [
+  const commitment = activeModel?.commitment;
+  const chain = activeRecord?.solanaCommitment;
+  const anchored = chain?.status === "confirmed" || chain?.status === "dry-run";
+
+  const statusItems = [
     {
-      label: "Model",
-      value: activeModel?.weights_public ? "Weights exposed" : "Weights hidden",
-      detail: shortHash(activeModel?.commitment),
-      icon: <Lock size={18} />,
-      tone: activeModel?.weights_public ? "warn" : "good"
+      k: "Model",
+      v: activeModel?.weights_public ? "Weights exposed" : "Weights hidden",
+      h: commitment ? shortHash(commitment) : "private",
+      icon: <Lock />,
+      state: activeModel?.weights_public ? "bad" : "neutral"
     },
     {
-      label: "Receipt",
-      value: verificationLabel(verification),
-      detail: shortHash(activeRecord?.receipt.digest),
-      icon: <BadgeCheck size={18} />,
-      tone: verification === "valid" ? "good" : verification === "invalid" ? "bad" : "idle"
+      k: "Receipt",
+      v: verificationLabel(verification),
+      h: activeRecord ? shortHash(activeRecord.receipt.digest) : "pending",
+      icon: <BadgeCheck />,
+      state:
+        verification === "valid"
+          ? "ok"
+          : verification === "invalid"
+            ? "bad"
+            : verification === "checking"
+              ? "neutral"
+              : "pending"
     },
     {
-      label: "TEE",
-      value: teeProofLabel(activeTeeEvidence),
-      detail: activeTeeEvidence?.source || "waiting for evidence",
-      icon: <ShieldCheck size={18} />,
-      tone: activeTeeEvidence ? "good" : "idle"
+      k: "TEE",
+      v: teeProofLabel(activeTeeEvidence),
+      h: activeTeeEvidence?.source || "waiting for evidence",
+      icon: <Cpu />,
+      state: activeTeeEvidence ? "ok" : "neutral"
     },
     {
-      label: "Devnet",
-      value: chainLabel(activeRecord),
-      detail: solana?.payer ? `payer ${shortHash(solana.payer, 8)}` : "not connected",
-      icon: <WalletCards size={18} />,
-      tone: activeRecord?.solanaCommitment?.status === "failed" ? "bad" : "idle"
+      k: "Devnet",
+      v: chainLabel(activeRecord),
+      h: solana?.payer ? `payer ${shortHash(solana.payer, 8)}` : "not connected",
+      icon: <Anchor />,
+      state: chain?.status === "failed" ? "bad" : anchored ? "ok" : "neutral"
     }
   ];
 
   return (
-    <main className="app-shell">
-      <header className="masthead">
-        <div className="topline">
-          <div className="brand">
-            <span className="brand-mark">
-              <Fingerprint size={24} />
-            </span>
-            <div>
-              <strong>Private GPT-2 Verifier</strong>
-              <span>TEE-backed generation with Solana devnet receipts</span>
+    <div className="app">
+      <header className="topbar">
+        <div className="brand">
+          <div className="brand-mark">
+            <SealedCube />
+          </div>
+          <div>
+            <div className="brand-title">Private GPT-2 Verifier</div>
+            <div className="brand-sub">TEE-backed generation with Solana devnet receipts</div>
+          </div>
+        </div>
+        <button className="btn-ghost" type="button" onClick={refresh} disabled={!!busy}>
+          {busy ? <Loader2 className="spin" /> : <RefreshCcw />}
+          <span>{busy || "Refresh"}</span>
+        </button>
+      </header>
+
+      {/* hero / composer */}
+      <section className="panel hero-wide">
+        <span className="eyebrow">Private chat demo</span>
+        <h1 className="headline">
+          Chat with GPT-2 without seeing its <span className="accentword">weights.</span>
+        </h1>
+        <p className="lede">
+          Imagine OpenAI wanted the public to test GPT-2 while keeping the
+          checkpoint private. Each answer comes back with a signed receipt binding
+          the prompt hash, output hash, model commitment, TEE evidence, and optional
+          Solana timestamp.
+        </p>
+
+        <div className="composer">
+          <label className="composer-label" htmlFor="chat-prompt">
+            Message to private GPT-2
+          </label>
+          <div className="composer-row">
+            <textarea
+              id="chat-prompt"
+              className="chat-input"
+              placeholder="Ask GPT-2 something…"
+              value={prompt}
+              spellCheck={false}
+              onChange={(event) => setPrompt(event.target.value)}
+              onKeyDown={handleComposerKeyDown}
+            />
+            <button
+              className="send-btn"
+              type="button"
+              onClick={send}
+              disabled={!!busy || prompt.trim().length < 1}
+            >
+              {running ? <Loader2 className="spin" /> : <Send />}
+              <span>{running ? "Running…" : "Send"}</span>
+            </button>
+          </div>
+
+          <div className="sampling" data-open={samplingOpen}>
+            <button
+              className="sampling-toggle"
+              type="button"
+              onClick={() => setSamplingOpen((value) => !value)}
+            >
+              <SlidersHorizontal /> Sampling controls
+              <ChevronDown className="caret" />
+            </button>
+            <div className="sampling-body">
+              <Slider
+                label="Temperature"
+                value={temperature}
+                min={0.1}
+                max={1.5}
+                step={0.05}
+                fmt={(value) => value.toFixed(2)}
+                onChange={setTemperature}
+              />
+              <Slider
+                label="Top-p"
+                value={topP}
+                min={0.1}
+                max={1}
+                step={0.05}
+                fmt={(value) => value.toFixed(2)}
+                onChange={setTopP}
+              />
+              <Slider
+                label="Max tokens"
+                value={maxNewTokens}
+                min={16}
+                max={180}
+                step={4}
+                fmt={(value) => String(value)}
+                onChange={setMaxNewTokens}
+              />
             </div>
           </div>
-          <button className="icon-button" type="button" onClick={refreshAll} disabled={!!busy}>
-            {busy ? <Loader2 className="spin" size={18} /> : <RefreshCcw size={18} />}
-            <span>{busy || "Refresh"}</span>
-          </button>
         </div>
-
-        <section className="chat-panel chat-hero" aria-labelledby="experiment-title">
-          <div className="chat-intro">
-            <p className="eyebrow">Private chat demo</p>
-            <h1 id="experiment-title">Chat with GPT-2 without seeing its weights.</h1>
-            <p className="lead">
-              Imagine OpenAI wanted the public to test GPT-2 while keeping the
-              checkpoint private. Each answer comes back with a signed receipt
-              binding the prompt hash, output hash, model commitment, TEE
-              evidence, and optional Solana timestamp.
-            </p>
-          </div>
-
-          <div className="chat-shell">
-            {hasVisibleConversation && (
-              <div className="chat-window" aria-live="polite">
-                {activeRecord && (
-                  <>
-                    <article className="chat-message user-message">
-                      <div className="chat-avatar">You</div>
-                      <div className="chat-bubble">
-                        <p>{activeRecord.prompt}</p>
-                      </div>
-                    </article>
-
-                    <article className="chat-message assistant-message">
-                      <div className="chat-avatar">GPT-2</div>
-                      <div className="chat-bubble">
-                        <p>{activeRecord.generation.output}</p>
-                        <div className="bubble-meta">
-                          <span>{activeRecord.generation.tokenCount.generated} tokens</span>
-                          <span>{formatMs(activeRecord.generation.latencyMs)}</span>
-                          <span>{shortHash(activeRecord.receipt.digest, 8)}</span>
-                        </div>
-                      </div>
-                    </article>
-                  </>
-                )}
-
-                {busy === "Running GPT-2" && (
-                  <article className="chat-message assistant-message">
-                    <div className="chat-avatar">
-                      <Loader2 className="spin" size={16} />
-                    </div>
-                    <div className="chat-bubble thinking-bubble">
-                      <span />
-                      <span />
-                      <span />
-                    </div>
-                  </article>
-                )}
-              </div>
-            )}
-
-            <form className="chat-composer" onSubmit={submitPrompt}>
-              <label className="composer-label" htmlFor="chat-prompt">
-                Message to private GPT-2
-              </label>
-              <textarea
-                id="chat-prompt"
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-                onKeyDown={handleComposerKeyDown}
-                placeholder="Ask GPT-2 something..."
-              />
-              <button
-                className="primary-button send-button"
-                type="submit"
-                disabled={!!busy || prompt.trim().length < 1}
-              >
-                <Send size={18} />
-                <span>Send</span>
-              </button>
-            </form>
-
-            <details className="sampling-controls">
-              <summary>
-                <SlidersHorizontal size={16} />
-                <span>Sampling controls</span>
-              </summary>
-              <div className="control-grid">
-                <label className="range-field">
-                  <span>New tokens</span>
-                  <strong>{maxNewTokens}</strong>
-                  <input
-                    type="range"
-                    min={16}
-                    max={180}
-                    step={4}
-                    value={maxNewTokens}
-                    onChange={(event) => setMaxNewTokens(Number(event.target.value))}
-                  />
-                </label>
-                <label className="range-field">
-                  <span>Temperature</span>
-                  <strong>{temperature.toFixed(2)}</strong>
-                  <input
-                    type="range"
-                    min={0.1}
-                    max={1.5}
-                    step={0.05}
-                    value={temperature}
-                    onChange={(event) => setTemperature(Number(event.target.value))}
-                  />
-                </label>
-                <label className="range-field">
-                  <span>Top-p</span>
-                  <strong>{topP.toFixed(2)}</strong>
-                  <input
-                    type="range"
-                    min={0.1}
-                    max={1}
-                    step={0.05}
-                    value={topP}
-                    onChange={(event) => setTopP(Number(event.target.value))}
-                  />
-                </label>
-              </div>
-            </details>
-
-            {records.length > 0 && (
-              <div className="recent-runs" aria-label="Recent signed responses">
-                <span>Recent receipts</span>
-                {records.slice(0, 3).map((record) => (
-                  <button
-                    type="button"
-                    key={record.id}
-                    className={record.id === activeRecord?.id ? "active" : ""}
-                    onClick={() => setActiveRecord(record)}
-                  >
-                    <strong>{shortHash(record.receipt.digest, 6)}</strong>
-                    <small>{record.generation.tokenCount.generated} tokens</small>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-      </header>
+      </section>
 
       {error && (
         <div className="error-strip" role="alert">
-          <AlertTriangle size={18} />
+          <AlertTriangle />
           <span>{error}</span>
         </div>
       )}
 
-      <section className="proof-row" aria-label="Proof summary">
-        {proofItems.map((item) => (
-          <ProofTile {...item} key={item.label} />
+      {/* status strip */}
+      <section className="status-strip">
+        {statusItems.map((item) => (
+          <StatusTile key={item.k} {...item} />
         ))}
       </section>
 
-      <section className="workbench">
-        <section className="panel output-panel">
-          <div className="panel-heading">
+      {/* output + proof */}
+      <section className="lower-grid">
+        <div className="panel">
+          <div className="panel-head">
             <div>
-              <span className="section-kicker">Model output</span>
-              <h2>Generated text</h2>
+              <span className="eyebrow">Model output</span>
+              <div className="panel-title">Generated text</div>
             </div>
             {activeRecord && (
-              <span className="pill">
-                {activeRecord.generation.tokenCount.generated} tokens
+              <span className="pill-count">
+                {activeRecord.generation.tokenCount.generated} tokens ·{" "}
+                {formatMs(activeRecord.generation.latencyMs)}
               </span>
             )}
           </div>
-          {activeRecord ? <OutputPanel record={activeRecord} /> : <EmptyState />}
-        </section>
-
-        <section className="panel receipt-panel">
-          <div className="panel-heading">
+          {running ? (
+            <div className="empty">
+              <span className="running-line">
+                <Loader2 className="spin" /> Generating inside the TEE…
+              </span>
+            </div>
+          ) : activeRecord ? (
             <div>
-              <span className="section-kicker">Proof</span>
-              <h2>What the receipt says</h2>
+              <div className="gen-prompt">▸ {activeRecord.prompt}</div>
+              <div className="gen-text">{activeRecord.generation.output}</div>
+            </div>
+          ) : (
+            <EmptyState />
+          )}
+        </div>
+
+        <div className="panel">
+          <div className="panel-head">
+            <div>
+              <span className="eyebrow">Proof</span>
+              <div className="panel-title">What the receipt says</div>
             </div>
             <VerificationBadge state={verification} />
           </div>
-
           {activeRecord ? (
-            <>
-              <div className="receipt-summary">
-                <div>
-                  <span>Run id</span>
-                  <strong>{activeRecord.id}</strong>
+            <div>
+              <div className="kv">
+                <div className="kv-row">
+                  <div className="kv-k">Run ID</div>
+                  <div className="kv-v">{activeRecord.id}</div>
                 </div>
-                <div>
-                  <span>Issued</span>
-                  <strong>{formatDate(activeRecord.createdAt)}</strong>
+                <div className="kv-row">
+                  <div className="kv-k">Issued</div>
+                  <div className="kv-v">{formatDate(activeRecord.createdAt)}</div>
                 </div>
-                <div>
-                  <span>Receipt digest</span>
-                  <strong>{shortHash(activeRecord.receipt.digest, 14)}</strong>
+                <div className="kv-row">
+                  <div className="kv-k">Prompt hash</div>
+                  <div className="kv-v">{shortHash(activeRecord.generation.promptHash)}</div>
                 </div>
-                <div>
-                  <span>Model commitment</span>
-                  <strong>{shortHash(activeRecord.receipt.payload.model.commitment, 14)}</strong>
+                <div className="kv-row">
+                  <div className="kv-k">Output hash</div>
+                  <div className="kv-v">{shortHash(activeRecord.generation.outputHash)}</div>
+                </div>
+                <div className="kv-row">
+                  <div className="kv-k">Model commitment</div>
+                  <div className="kv-v">
+                    {shortHash(activeRecord.receipt.payload.model.commitment)}
+                  </div>
                 </div>
               </div>
-
-              <div className="action-strip">
-                <label className="toggle">
+              <div className="receipt-actions">
+                <label className="toggle" data-on={dryRunCommit}>
                   <input
                     type="checkbox"
                     checked={dryRunCommit}
                     onChange={(event) => setDryRunCommit(event.target.checked)}
                   />
-                  <span>Dry run</span>
+                  <span className="track">
+                    <span className="knob" />
+                  </span>
+                  Dry run
                 </label>
                 <button
-                  className="primary-button compact"
+                  className="btn btn-dark"
                   type="button"
                   onClick={commitActiveReceipt}
                   disabled={!!busy}
                 >
-                  <FileCheck2 size={16} />
-                  <span>Anchor receipt</span>
+                  <Anchor /> Anchor receipt
                 </button>
               </div>
-
-              <ChainNotice record={activeRecord} />
-            </>
+              {chain && <ChainNotice record={activeRecord} />}
+            </div>
           ) : (
             <EmptyState />
           )}
-        </section>
-      </section>
-
-      <details className="advanced-panel">
-        <summary>
-          <span>Evidence drawer</span>
-          <ChevronDown size={18} />
-        </summary>
-        <div className="advanced-grid">
-          <section>
-            <h3>Private model</h3>
-            <FactList
-              items={[
-                ["Weights", activeModel?.weights_public ? "public" : "private"],
-                ["Model", String(activeModel?.architecture.model_id || "gpt2")],
-                ["Commitment", activeModel?.commitment || "pending"],
-                ["Architecture", modelArchitecture(activeModel)]
-              ]}
-            />
-          </section>
-
-          <section>
-            <h3>TEE evidence</h3>
-            <FactList
-              items={[
-                ["Source", activeTeeEvidence?.source || "pending"],
-                ["Hardware", hardwareClaim(activeTeeEvidence)],
-                ["Evidence hash", activeTeeEvidence?.evidenceHash || "pending"],
-                ["Workload hash", audit?.workloadHash || activeTeeEvidence?.workloadHash || "pending"]
-              ]}
-            />
-          </section>
-
-          <section>
-            <h3>Solana devnet</h3>
-            <FactList
-              items={[
-                ["Base RPC", solana?.rpcUrl || "devnet"],
-                ["Payer", solana?.payer || "pending"],
-                ["Balance", solana ? `${solana.balanceSol.toFixed(4)} SOL` : "pending"],
-                ["Latest anchor", activeRecord?.solanaCommitment?.memoHash || "local only"]
-              ]}
-            />
-          </section>
-
-          <section>
-            <h3>Receipt hashes</h3>
-            {activeRecord ? (
-              <>
-                <ReceiptCanvas record={activeRecord} />
-                <FactList
-                  items={[
-                    ["Schema", activeRecord.receipt.payload.schema],
-                    ["Prompt", activeRecord.receipt.payload.promptHash],
-                    ["Output", activeRecord.receipt.payload.outputHash],
-                    ["Params", activeRecord.receipt.payload.paramsHash],
-                    ["TEE key", activeRecord.receipt.payload.runner.publicKeyFingerprint],
-                    ["Signature", activeRecord.receipt.signature]
-                  ]}
-                />
-              </>
-            ) : (
-              <p className="muted-copy">Run GPT-2 to create a receipt.</p>
-            )}
-          </section>
         </div>
-      </details>
-
-      <section className="context-strip">
-        <SlidersHorizontal size={18} />
-        <p>
-          This demo uses a TEE-style trust model, not ZK. The model checkpoint is
-          kept off the public frontend, and each output gets a signed receipt
-          that can be verified and optionally timestamped on Solana devnet.
-        </p>
       </section>
-    </main>
+
+      {/* evidence drawer */}
+      <section className="drawer" data-open={drawerOpen}>
+        <button
+          className="drawer-toggle"
+          type="button"
+          onClick={() => setDrawerOpen((value) => !value)}
+        >
+          <div>
+            <div className="dt-title">Evidence drawer</div>
+            <div className="dt-sub">
+              Private model, TEE attestation, Solana devnet and receipt hashes
+            </div>
+          </div>
+          <span className="drawer-caret">
+            <ChevronDown />
+          </span>
+        </button>
+        <div className="drawer-body">
+          <div className="evidence-grid">
+            <div>
+              <div className="ev-col-title">Private model</div>
+              <EvRow k="Weights" v={activeModel?.weights_public ? "public" : "private"} />
+              <EvRow k="Model" v={String(activeModel?.architecture.model_id || "gpt2")} />
+              <EvRow k="Commitment" v={activeModel?.commitment || "pending"} />
+              <EvRow k="Architecture" v={modelArchitecture(activeModel)} />
+            </div>
+            <div>
+              <div className="ev-col-title">TEE evidence</div>
+              <EvRow k="Source" v={activeTeeEvidence?.source || "pending"} />
+              <EvRow k="Hardware" v={hardwareClaim(activeTeeEvidence)} />
+              <EvRow k="Evidence hash" v={activeTeeEvidence?.evidenceHash || "pending"} />
+              <EvRow
+                k="Workload hash"
+                v={audit?.workloadHash || activeTeeEvidence?.workloadHash || "pending"}
+              />
+            </div>
+            <div>
+              <div className="ev-col-title">Solana devnet</div>
+              <EvRow k="Base RPC" v={solana?.rpcUrl || "devnet"} />
+              <EvRow k="Payer" v={solana?.payer || "pending"} />
+              <EvRow
+                k="Balance"
+                v={solana ? `${solana.balanceSol.toFixed(4)} SOL` : "pending"}
+              />
+              <EvRow k="Latest anchor" v={chain?.memoHash ? shortHash(chain.memoHash) : "local only"} />
+            </div>
+            <div>
+              <div className="ev-col-title">Receipt hashes</div>
+              {activeRecord ? (
+                <div>
+                  <ReceiptChart record={activeRecord} />
+                  <EvRow k="Prompt hash" v={activeRecord.receipt.payload.promptHash} />
+                  <EvRow k="Output hash" v={activeRecord.receipt.payload.outputHash} />
+                  <EvRow k="TEE key" v={activeRecord.receipt.payload.runner.publicKeyFingerprint} />
+                  <EvRow k="Signature" v={activeRecord.receipt.signature} />
+                </div>
+              ) : (
+                <div className="ev-v" style={{ marginTop: 2 }}>
+                  Run GPT-2 to create a receipt.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="foot">
+        checkpoint stays private · every answer is signed inside the TEE · optionally
+        anchored on Solana devnet
+      </div>
+    </div>
   );
 }
 
-function ProofTile({
+// Brand mark — "Sealed cube" (Logo Options #05): an isometric cube rendered as a
+// sealed black box, depth via face opacity. Single-color so it inverts cleanly.
+function SealedCube() {
+  return (
+    <svg viewBox="0 0 100 100" stroke="currentColor" strokeWidth={6} strokeLinejoin="round">
+      <polygon points="50 16 82 35 50 54 18 35" fill="currentColor" fillOpacity={1} />
+      <polygon points="18 35 50 54 50 88 18 69" fill="currentColor" fillOpacity={0.45} />
+      <polygon points="82 35 50 54 50 88 82 69" fill="currentColor" fillOpacity={0.72} />
+    </svg>
+  );
+}
+
+function StatusTile({
+  k,
+  v,
+  h,
   icon,
-  label,
-  value,
-  detail,
-  tone
+  state
 }: {
+  k: string;
+  v: string;
+  h: string;
   icon: React.ReactNode;
-  label: string;
-  value: string;
-  detail: string;
-  tone: string;
+  state: string;
 }) {
   return (
-    <article className={`proof-tile ${tone}`}>
-      <div>{icon}</div>
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <p>{detail}</p>
-    </article>
+    <div className="status">
+      <div className="status-ic" data-state={state}>
+        {icon}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div className="status-k">{k}</div>
+        <div className="status-v">{v}</div>
+        <div className="status-h">{h}</div>
+      </div>
+    </div>
   );
 }
 
 function VerificationBadge({ state }: { state: VerificationState }) {
-  const icon =
-    state === "valid" ? (
-      <CheckCircle2 size={15} />
-    ) : state === "invalid" ? (
-      <XCircle size={15} />
-    ) : state === "checking" ? (
-      <Loader2 className="spin" size={15} />
-    ) : (
-      <BadgeCheck size={15} />
+  if (state === "valid") {
+    return (
+      <span className="badge badge-valid">
+        <CheckCircle2 /> Signature valid
+      </span>
     );
-  return (
-    <span className={`verify-badge ${state}`}>
-      {icon}
-      {verificationLabel(state)}
-    </span>
-  );
-}
-
-function OutputPanel({ record }: { record: GenerationRecord }) {
-  return (
-    <div className="generated-output">
-      <div className="prompt-echo">
-        <span>Prompt hash</span>
-        <strong>{shortHash(record.generation.promptHash, 16)}</strong>
-      </div>
-      <article>
-        <p>{record.generation.output}</p>
-      </article>
-      <div className="model-stats">
-        <span>{formatMs(record.generation.latencyMs)}</span>
-        <span>{record.generation.tokenCount.prompt} prompt tokens</span>
-        <span>{record.generation.tokenCount.generated} generated tokens</span>
-        <span>{shortHash(record.generation.outputHash, 12)}</span>
-      </div>
-    </div>
-  );
+  }
+  if (state === "invalid") {
+    return (
+      <span className="badge badge-bad">
+        <XCircle /> Check failed
+      </span>
+    );
+  }
+  if (state === "checking") {
+    return (
+      <span className="badge badge-pending">
+        <Loader2 className="spin" /> Checking
+      </span>
+    );
+  }
+  return <span className="badge badge-pending">Unchecked</span>;
 }
 
 function ChainNotice({ record }: { record: GenerationRecord }) {
-  if (record.solanaCommitment) {
-    return (
-      <div className={`chain-notice ${record.solanaCommitment.status}`}>
-        <KeyRound size={17} />
-        <div>
-          <strong>
-            {record.solanaCommitment.explorerUrl ? (
-              <a
-                href={record.solanaCommitment.explorerUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Solana {record.solanaCommitment.status}
-                <ArrowUpRight size={13} />
-              </a>
-            ) : (
-              `Solana ${record.solanaCommitment.status}`
-            )}
-          </strong>
-          <span>{shortHash(record.solanaCommitment.memoHash, 14)}</span>
-        </div>
-      </div>
-    );
-  }
-
+  const chain = record.solanaCommitment;
+  if (!chain) return null;
+  const failed = chain.status === "failed";
   return (
-    <div className="chain-notice idle">
-      <Database size={17} />
-      <div>
-        <strong>Receipt is local until anchored</strong>
-        <span>Use devnet anchoring when you want a public timestamp.</span>
+    <div className={`confirmed${failed ? " failed" : ""}`}>
+      <span className="dot" />
+      <div style={{ minWidth: 0 }}>
+        <div className="confirmed-t">
+          {chain.explorerUrl ? (
+            <a href={chain.explorerUrl} target="_blank" rel="noreferrer">
+              Solana {chain.status}
+              <ArrowUpRight />
+            </a>
+          ) : (
+            <span>Solana {chain.status}</span>
+          )}
+        </div>
+        <div className="confirmed-h">{chain.error || shortHash(chain.memoHash, 14)}</div>
       </div>
     </div>
   );
 }
 
-function FactList({ items }: { items: Array<[string, string]> }) {
+function EvRow({ k, v }: { k: string; v: string }) {
   return (
-    <dl className="fact-list">
-      {items.map(([label, value]) => (
-        <div key={label}>
-          <dt>{label}</dt>
-          <dd>{value}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className="ev-row">
+      <div className="ev-k">{k}</div>
+      <div className="ev-v">{v}</div>
+    </div>
   );
 }
 
-function ReceiptCanvas({ record }: { record: GenerationRecord }) {
-  const ref = React.useRef<HTMLCanvasElement | null>(null);
+function Slider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  fmt,
+  onChange
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  fmt: (value: number) => string;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div className="slider-field">
+      <div className="slider-head">
+        <span className="slider-k">{label}</span>
+        <span className="slider-v">{fmt(value)}</span>
+      </div>
+      <input
+        className="rng"
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(parseFloat(event.target.value))}
+      />
+    </div>
+  );
+}
 
-  React.useEffect(() => {
-    const canvas = ref.current;
-    if (!canvas) return;
-    const context = canvas.getContext("2d");
-    if (!context) return;
-    const scale = window.devicePixelRatio || 1;
-    const width = canvas.clientWidth;
-    const height = canvas.clientHeight;
-    canvas.width = width * scale;
-    canvas.height = height * scale;
-    context.scale(scale, scale);
-    context.clearRect(0, 0, width, height);
-    context.fillStyle = "#111318";
-    context.fillRect(0, 0, width, height);
-    const hashes = [
-      record.receipt.payload.promptHash,
-      record.receipt.payload.outputHash,
-      record.receipt.payload.paramsHash,
-      record.receipt.payload.runner.teeEvidenceHash,
-      record.receipt.payload.model.commitment,
-      record.receipt.digest
-    ].filter((hash): hash is string => Boolean(hash));
-    const points = hashes.map((hash, index) => {
-      const seed = parseInt(hash.slice(0, 8), 16);
-      return {
-        x: 24 + ((seed % 1000) / 1000) * (width - 48),
-        y: 22 + index * ((height - 44) / Math.max(hashes.length - 1, 1)),
-        color:
-          ["#c7ff3d", "#20a4a8", "#ff6b3d", "#f5b942", "#7868e6", "#ffffff"][
-            index
-          ]
-      };
-    });
-    context.strokeStyle = "rgba(255,255,255,.24)";
-    context.lineWidth = 1;
-    for (let index = 0; index < points.length - 1; index += 1) {
-      context.beginPath();
-      context.moveTo(points[index].x, points[index].y);
-      context.lineTo(points[index + 1].x, points[index + 1].y);
-      context.stroke();
-    }
-    points.forEach((point, index) => {
-      context.fillStyle = point.color;
-      context.beginPath();
-      context.arc(point.x, point.y, index === points.length - 1 ? 6 : 4, 0, Math.PI * 2);
-      context.fill();
-    });
-  }, [record]);
+function ReceiptChart({ record }: { record: GenerationRecord }) {
+  const hashes = [
+    record.receipt.payload.promptHash,
+    record.receipt.payload.outputHash,
+    record.receipt.payload.paramsHash,
+    record.receipt.payload.runner.teeEvidenceHash,
+    record.receipt.payload.model.commitment,
+    record.receipt.digest
+  ].filter((hash): hash is string => Boolean(hash));
 
-  return <canvas className="receipt-canvas" ref={ref} />;
+  const colors = [
+    "var(--approve)",
+    "var(--review)",
+    "var(--insuff)",
+    "white",
+    "oklch(0.78 0.14 70)",
+    "var(--block)"
+  ];
+
+  const points = hashes.map((hash, index) => {
+    const seed = parseInt(hash.slice(0, 6), 16) || 0;
+    return {
+      x: 12 + ((seed % 1000) / 1000) * 80,
+      y: 16 + (index * 48) / Math.max(hashes.length - 1, 1)
+    };
+  });
+  const path = points.map((p, i) => `${i ? "L" : "M"}${p.x} ${p.y}`).join(" ");
+
+  return (
+    <div className="ev-chart">
+      <svg
+        viewBox="0 0 100 80"
+        style={{ width: "100%", height: "100%" }}
+        preserveAspectRatio="none"
+      >
+        <path d={path} fill="none" stroke="oklch(1 0 0 / 0.18)" strokeWidth="0.8" />
+        {points.map((p, i) => (
+          <circle
+            key={i}
+            cx={p.x}
+            cy={p.y}
+            r={i === points.length - 1 ? 3 : 2.4}
+            fill={colors[i % colors.length]}
+          />
+        ))}
+      </svg>
+    </div>
+  );
 }
 
 function EmptyState() {
   return (
-    <div className="empty-state">
-      <ShieldCheck size={28} />
-      <span>No model run yet</span>
+    <div className="empty">
+      <div className="empty-ic">
+        <ShieldCheck />
+      </div>
+      <div className="empty-t">No model run yet</div>
     </div>
   );
 }
