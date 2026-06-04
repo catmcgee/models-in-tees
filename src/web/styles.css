@@ -758,32 +758,6 @@ input[type="range"].rng::-moz-range-thumb {
   }
 }
 
-/* ---------- status strip ---------- */
-.status-strip {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
-  margin-top: 18px;
-}
-@media (max-width: 760px) { .status-strip { grid-template-columns: repeat(2, 1fr); } }
-.status {
-  background: var(--surface);
-  border-radius: var(--r-lg);
-  box-shadow: var(--sh-sm), var(--sh-inset);
-  padding: 16px 18px;
-  display: flex; gap: 13px; align-items: flex-start;
-}
-.status-ic {
-  flex: none; width: 34px; height: 34px; border-radius: 11px;
-  display: grid; place-items: center;
-  background: var(--accent-tint); color: var(--accent-ink);
-}
-.status-ic svg { width: 17px; height: 17px; }
-.status-ic[data-state="pending"] { background: var(--surface-2); color: var(--faint); }
-.status-ic[data-state="ok"] { background: var(--approve-tint); color: var(--approve); }
-.status-ic[data-state="bad"] { background: var(--block-tint); color: var(--block); }
-.status-k { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
-.status-v { font-size: 14px; font-weight: 600; color: var(--ink); margin-top: 3px; }
-.status-h { font-family: var(--font-mono); font-size: 11px; color: var(--faint); margin-top: 4px; word-break: break-all; }
-
 /* ---------- tabbed result workbench ---------- */
 .result-workbench {
   margin-top: 18px;

@@ -4,12 +4,10 @@ import {
   AlertTriangle,
   Anchor,
   ArrowUpRight,
-  BadgeCheck,
   CheckCircle2,
   ChevronDown,
   Cpu,
   Loader2,
-  Lock,
   RefreshCcw,
   Send,
   ShieldCheck,
@@ -525,16 +523,12 @@ function App() {
   const interpreting = busy === "Running interpretability" || runningAll;
   const activeReceipt =
     labMode === "chat" ? activeRecord?.receipt : interpRecord?.receipt || activeRecord?.receipt;
-  const receiptVerification =
-    labMode === "chat" ? verification : interpRecord ? interpVerification : verification;
   const activeTeeEvidence = activeReceipt?.payload.runner.teeEvidence || teeEvidence;
   const activeModel =
     labMode === "chat"
       ? activeRecord?.generation.model || model
       : interpRecord?.result.model || activeRecord?.generation.model || model;
-  const commitment = activeModel?.commitment;
   const chain = labMode === "chat" ? activeRecord?.solanaCommitment : interpRecord?.solanaCommitment;
-  const anchored = chain?.status === "confirmed" || chain?.status === "dry-run";
   const modelName = modelDisplayName(activeModel);
   const privateModelName = activeModel ? `private ${modelName}` : "private model";
   const checkpointName = activeModel ? `${modelName} checkpoint` : "model checkpoint";
@@ -554,52 +548,6 @@ function App() {
     patch: Boolean(interpRecord?.result.patching?.available)
   };
   const lastRunPrompt = activeRecord?.prompt || interpRecord?.prompt || null;
-
-  const statusItems = [
-    {
-      k: "Model",
-      v: activeModel
-        ? activeModel.weights_public
-          ? "Weights exposed"
-          : "Weights hidden"
-        : "Loading model",
-      h: commitment ? shortHash(commitment) : "waiting for /api/llm",
-      icon: <Lock />,
-      state: activeModel ? (activeModel.weights_public ? "bad" : "neutral") : "pending"
-    },
-    {
-      k: "Receipt",
-      v: verificationLabel(receiptVerification),
-      h: activeReceipt ? shortHash(activeReceipt.digest) : "pending",
-      icon: <BadgeCheck />,
-      state:
-        receiptVerification === "valid"
-          ? "ok"
-          : receiptVerification === "invalid"
-            ? "bad"
-            : receiptVerification === "checking"
-              ? "neutral"
-              : "pending"
-    },
-    {
-      k: "TEE",
-      v: activeTeeEvidence ? teeProofLabel(activeTeeEvidence) : teeName,
-      h: activeTeeEvidence?.source || health?.teeMode || "waiting for /api/tee/evidence",
-      icon: <Cpu />,
-      state: activeTeeEvidence ? "ok" : health ? "neutral" : "pending"
-    },
-    {
-      k: "Chain",
-      v: activeReceipt ? chainStateLabel(chain) : networkName,
-      h: solana?.payer
-        ? `payer ${shortHash(solana.payer, 8)}`
-        : health?.network
-          ? "waiting for /api/solana/status"
-          : "waiting for /api/health",
-      icon: <Anchor />,
-      state: chain?.status === "failed" ? "bad" : anchored ? "ok" : "neutral"
-    }
-  ];
 
   return (
     <div className="app">
@@ -772,13 +720,6 @@ function App() {
         </div>
       )}
 
-      {/* status strip */}
-      <section className="status-strip">
-        {statusItems.map((item) => (
-          <StatusTile key={item.k} {...item} />
-        ))}
-      </section>
-
       <section className="result-workbench">
         <div className="result-tabbar">
           <div className="mode-tabs" role="tablist" aria-label="Result view">
@@ -797,10 +738,11 @@ function App() {
               </button>
             ))}
           </div>
-          <div className="tab-help">
-            <span>Switch views after the prompt runs.</span>
-            {lastRunPrompt && <strong>Last run: {lastRunPrompt}</strong>}
-          </div>
+          {lastRunPrompt && (
+            <div className="tab-help">
+              <strong>Last run: {lastRunPrompt}</strong>
+            </div>
+          )}
         </div>
 
         {labMode === "chat" ? (
@@ -1299,33 +1241,6 @@ function RedactionPolicy({
   );
 }
 
-function StatusTile({
-  k,
-  v,
-  h,
-  icon,
-  state
-}: {
-  k: string;
-  v: string;
-  h: string;
-  icon: React.ReactNode;
-  state: string;
-}) {
-  return (
-    <div className="status">
-      <div className="status-ic" data-state={state}>
-        {icon}
-      </div>
-      <div style={{ minWidth: 0 }}>
-        <div className="status-k">{k}</div>
-        <div className="status-v">{v}</div>
-        <div className="status-h">{h}</div>
-      </div>
-    </div>
-  );
-}
-
 function VerificationBadge({ state }: { state: VerificationState }) {
   if (state === "valid") {
     return (
@@ -1577,20 +1492,6 @@ function formatDate(value: string): string {
   }).format(new Date(value));
 }
 
-function verificationLabel(state: VerificationState): string {
-  if (state === "valid") return "Signature valid";
-  if (state === "invalid") return "Check failed";
-  if (state === "checking") return "Checking";
-  return "Unchecked";
-}
-
-function teeProofLabel(evidence?: TeeEvidenceSummary | null): string {
-  if (!evidence) return "No evidence";
-  if (evidence.hardwareModel) return evidence.hardwareModel;
-  if (evidence.attestationStatus === "unavailable") return "Local simulation";
-  return evidence.attestationStatus;
-}
-
 function modelDisplayName(model?: ModelInfo | null): string {
   const raw =
     model?.architecture.model_id ||
@@ -1637,17 +1538,6 @@ function teeRuntimeName(
 
 function isGenerationSignedReceipt(receipt: SignedAnyReceipt): receipt is Receipt {
   return receipt.payload.schema === "private-gpt2-receipt/v1";
-}
-
-function chainLabel(record?: GenerationRecord | null): string {
-  return chainStateLabel(record?.solanaCommitment);
-}
-
-function chainStateLabel(chain?: GenerationRecord["solanaCommitment"]): string {
-  if (!chain) return "Local only";
-  if (chain.status === "confirmed") return "Anchored";
-  if (chain.status === "dry-run") return "Dry run";
-  return "Failed";
 }
 
 function hardwareClaim(evidence?: TeeEvidenceSummary | null): string {
