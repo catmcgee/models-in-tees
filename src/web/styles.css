@@ -248,7 +248,7 @@ em, i { font-style: normal; }
 
 .interp-input-grid {
   display: grid;
-  grid-template-columns: minmax(160px, 0.35fr) minmax(0, 1fr);
+  grid-template-columns: minmax(150px, 0.35fr) minmax(130px, 0.25fr) minmax(130px, 0.25fr);
   gap: 12px;
   margin-top: 12px;
 }
@@ -343,6 +343,45 @@ input[type="range"].rng::-moz-range-thumb {
   gap: 14px;
   margin-bottom: 18px;
 }
+.interp-primer {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.primer-card {
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--hair-soft);
+  padding: 14px;
+}
+.primer-card[data-active="true"] {
+  background: color-mix(in oklch, var(--accent-tint) 68%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 36%, var(--hair-soft));
+}
+.primer-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  margin-bottom: 10px;
+}
+.primer-line {
+  display: grid;
+  gap: 3px;
+  margin-top: 9px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+.primer-line strong {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
 .lens-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(240px, 0.34fr);
@@ -352,6 +391,7 @@ input[type="range"].rng::-moz-range-thumb {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  align-content: start;
 }
 .lens-layer,
 .attention-card {
@@ -371,13 +411,30 @@ input[type="range"].rng::-moz-range-thumb {
   margin-bottom: 10px;
 }
 .lens-layer-head strong { color: var(--accent-ink); }
-.token-row,
+.lens-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.lens-stats span {
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  padding: 4px 7px;
+  box-shadow: var(--sh-sm);
+}
+.token-list {
+  display: grid;
+  gap: 6px;
+}
 .policy-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
-.token-chip,
 .policy-tags span {
   border-radius: var(--r-pill);
   background: var(--surface);
@@ -387,19 +444,86 @@ input[type="range"].rng::-moz-range-thumb {
   font-family: var(--font-mono);
   font-size: 10.5px;
 }
+.token-chip {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 72px 44px;
+  gap: 7px;
+  align-items: center;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink-soft);
+  box-shadow: var(--sh-sm);
+  padding: 7px 8px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+.token-chip strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink);
+}
+.token-chip em,
+.token-chip span {
+  color: var(--muted);
+  font-style: normal;
+}
+.token-chip b {
+  color: var(--accent-ink);
+  text-align: right;
+}
 .policy-tags.withheld span {
   background: var(--block-tint);
   color: var(--block);
 }
+.attention-card {
+  max-height: 820px;
+  overflow: hidden;
+}
+.attention-headline {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.attention-headline span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.attention-stack {
+  display: grid;
+  gap: 10px;
+  max-height: 760px;
+  overflow: auto;
+  padding-right: 4px;
+}
+.attention-layer {
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--sh-sm);
+  padding: 10px;
+}
+.attention-layer-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.attention-layer-head strong { color: var(--ink); }
 .attn-row {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) 44px;
+  grid-template-columns: 28px minmax(0, 1fr) 42px;
   gap: 8px;
   align-items: center;
-  padding: 9px 0;
+  padding: 7px 0;
   border-bottom: 1px solid var(--hair-soft);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10.5px;
 }
 .attn-row:last-child { border-bottom: none; }
 .attn-row strong {
@@ -411,6 +535,10 @@ input[type="range"].rng::-moz-range-thumb {
   color: var(--accent-ink);
   text-align: right;
 }
+.attn-row small {
+  grid-column: 2 / -1;
+  color: var(--muted);
+}
 .patch-view {
   display: grid;
   gap: 16px;
@@ -421,7 +549,7 @@ input[type="range"].rng::-moz-range-thumb {
 }
 .patch-row {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) 48px;
+  grid-template-columns: 38px minmax(0, 1fr) 48px 92px 136px;
   gap: 10px;
   align-items: center;
   font-family: var(--font-mono);
@@ -439,14 +567,63 @@ input[type="range"].rng::-moz-range-thumb {
   border-radius: inherit;
   background: linear-gradient(90deg, var(--accent), var(--approve));
 }
+.patch-row em,
+.patch-row small {
+  color: var(--muted);
+  font-style: normal;
+}
+.patch-row small {
+  text-align: right;
+}
+.patch-table {
+  display: grid;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--hair-soft);
+}
+.patch-table-head,
+.patch-table-row {
+  display: grid;
+  grid-template-columns: 0.7fr repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+.patch-table-head span,
+.patch-table-row span {
+  padding: 9px 10px;
+  background: var(--surface-2);
+}
+.patch-table-head span {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+}
+.patch-table-row span {
+  background: var(--surface);
+  color: var(--ink-soft);
+}
 .compact-empty { min-height: 110px; }
 @media (max-width: 920px) {
   .lens-layout,
   .lens-grid,
   .interp-meta,
+  .interp-primer,
   .patch-summary,
   .redaction {
     grid-template-columns: 1fr;
+  }
+  .patch-row {
+    grid-template-columns: 34px minmax(0, 1fr) 44px;
+  }
+  .patch-row em,
+  .patch-row small {
+    grid-column: 2 / -1;
+    text-align: left;
+  }
+  .patch-table-head,
+  .patch-table-row {
+    grid-template-columns: 0.5fr 1fr 1fr 1fr;
   }
 }
 

@@ -272,6 +272,7 @@ function App() {
   const [temperature, setTemperature] = React.useState(0.75);
   const [topP, setTopP] = React.useState(0.92);
   const [interpTopK, setInterpTopK] = React.useState(5);
+  const [interpMaxPromptTokens, setInterpMaxPromptTokens] = React.useState(128);
   const [model, setModel] = React.useState<ModelInfo | null>(null);
   const [records, setRecords] = React.useState<GenerationRecord[]>([]);
   const [activeRecord, setActiveRecord] = React.useState<GenerationRecord | null>(null);
@@ -453,7 +454,7 @@ function App() {
             : undefined,
         targetToken: targetToken.trim().length ? targetToken : undefined,
         topK: interpTopK,
-        maxPromptTokens: 128
+        maxPromptTokens: interpMaxPromptTokens
       });
       setInterpRecord(body.record);
       setModel(body.record.result.model);
@@ -660,6 +661,21 @@ function App() {
                   value={interpTopK}
                   onChange={(event) =>
                     setInterpTopK(Math.max(1, Math.min(5, Number(event.target.value) || 5)))
+                  }
+                />
+              </label>
+              <label>
+                <span>Prompt token limit</span>
+                <input
+                  type="number"
+                  min={16}
+                  max={192}
+                  step={8}
+                  value={interpMaxPromptTokens}
+                  onChange={(event) =>
+                    setInterpMaxPromptTokens(
+                      Math.max(16, Math.min(192, Number(event.target.value) || 128))
+                    )
                   }
                 />
               </label>
@@ -976,6 +992,7 @@ function InterpretabilityPanel({
         </div>
       ) : record ? (
         <>
+          <InterpretabilityPrimer mode={mode} />
           <div className="interp-meta">
             <EvRow k="Experiment receipt" v={shortHash(record.receipt.digest, 14)} />
             <EvRow k="Result hash" v={shortHash(record.result.resultHash, 14)} />
@@ -983,7 +1000,14 @@ function InterpretabilityPanel({
               k="Target token"
               v={`${JSON.stringify(record.result.target.token)} · ${record.result.target.source}`}
             />
+            <EvRow k="Prompt position" v={`Token ${record.result.lens.position}`} />
             <EvRow k="Latency" v={formatMs(record.result.latencyMs)} />
+            <EvRow k="Max prompt tokens" v={String(record.result.params.maxPromptTokens)} />
+            <EvRow k="Top-k" v={String(record.result.params.topK)} />
+            <EvRow
+              k="Clean target log-prob"
+              v={record.result.target.cleanLogProb.toFixed(4)}
+            />
           </div>
           {mode === "lens" ? (
             <LensView result={record.result} />
@@ -993,31 +1017,81 @@ function InterpretabilityPanel({
           <RedactionPolicy result={record.result} modelName={modelName} />
         </>
       ) : (
-        <div className="empty">
-          <div className="empty-ic">
-            <Cpu />
+        <>
+          <InterpretabilityPrimer mode={mode} />
+          <div className="empty">
+            <div className="empty-ic">
+              <Cpu />
+            </div>
+            <div className="empty-t">
+              Run {mode === "lens" ? "Lens" : "Patch"} to create signed, redacted
+              interpretability artifacts.
+            </div>
           </div>
-          <div className="empty-t">
-            Run {mode === "lens" ? "Lens" : "Patch"} to create signed, redacted
-            interpretability artifacts.
-          </div>
-        </div>
+        </>
       )}
     </div>
   );
 }
 
-function LensView({ result }: { result: InterpretabilityResult }) {
-  const focusedHeads = result.attention.layers
-    .flatMap((layer) =>
-      layer.focusedHeads.map((head) => ({
-        ...head,
-        layer: layer.layer
-      }))
-    )
-    .sort((a, b) => b.maxAttention - a.maxAttention)
-    .slice(0, 6);
+function InterpretabilityPrimer({ mode }: { mode: Exclude<LabMode, "chat"> }) {
+  const cards = [
+    {
+      title: "Logit lens",
+      asks: "What token does each layer already seem to be pointing toward?",
+      gives: "Top-k next-token guesses, target rank, target probability, and target logit for every layer.",
+      tradeoff:
+        "Useful for seeing prediction formation over depth, but it is a projection probe, not a proof of the model's actual reasoning."
+    },
+    {
+      title: "Attention summary",
+      asks: "Which prompt tokens do attention heads focus on for the final prediction?",
+      gives:
+        "For each layer, mean attention entropy plus the three most focused heads with head id, token position, token text, max attention, and entropy.",
+      tradeoff:
+        "Good for spotting routing patterns, but attention is not the same thing as explanation and raw attention tensors stay private."
+    },
+    {
+      title: "Activation patching",
+      asks:
+        "If we swap one clean layer's final-token activation into a corrupted run, which layer restores the target answer?",
+      gives:
+        "Clean/corrupted target log-probs plus per-layer target log-prob, raw recovery, and clipped recovery.",
+      tradeoff:
+        "Closer to causal evidence than lens or attention, but this demo patches one final-token residual state per layer and does not expose vectors."
+    }
+  ];
 
+  return (
+    <div className="interp-primer">
+      {cards.map((card) => (
+        <div
+          className="primer-card"
+          data-active={
+            card.title === "Activation patching" ? mode === "patch" : mode === "lens"
+          }
+          key={card.title}
+        >
+          <div className="primer-title">{card.title}</div>
+          <div className="primer-line">
+            <strong>Asks</strong>
+            <span>{card.asks}</span>
+          </div>
+          <div className="primer-line">
+            <strong>Returns</strong>
+            <span>{card.gives}</span>
+          </div>
+          <div className="primer-line">
+            <strong>Tradeoff</strong>
+            <span>{card.tradeoff}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LensView({ result }: { result: InterpretabilityResult }) {
   return (
     <div className="lens-layout">
       <div className="lens-grid">
@@ -1025,13 +1099,20 @@ function LensView({ result }: { result: InterpretabilityResult }) {
           <div className="lens-layer" key={layer.layer}>
             <div className="lens-layer-head">
               <span>{layer.label}</span>
-              <strong>rank {layer.target.rank}</strong>
+              <strong>target rank {layer.target.rank}</strong>
             </div>
-            <div className="token-row">
+            <div className="lens-stats">
+              <span>target prob {formatProbability(layer.target.probability)}</span>
+              <span>logit {layer.target.logit.toFixed(4)}</span>
+            </div>
+            <div className="token-list">
               {layer.topTokens.map((token) => (
-                <span className="token-chip" key={`${layer.layer}-${token.rank}-${token.tokenId}`}>
-                  {JSON.stringify(token.token)} {formatProbability(token.probability)}
-                </span>
+                <div className="token-chip" key={`${layer.layer}-${token.rank}-${token.tokenId}`}>
+                  <span>#{token.rank}</span>
+                  <strong>{JSON.stringify(token.token)}</strong>
+                  <em>id {token.tokenId}</em>
+                  <b>{formatProbability(token.probability)}</b>
+                </div>
               ))}
             </div>
           </div>
@@ -1039,17 +1120,35 @@ function LensView({ result }: { result: InterpretabilityResult }) {
       </div>
 
       <div className="attention-card">
-        <div className="ev-col-title">Attention focus summary</div>
-        {focusedHeads.length > 0 ? (
-          focusedHeads.map((head) => (
-            <div className="attn-row" key={`${head.layer}-${head.head}`}>
-              <span>
-                L{head.layer} H{head.head}
-              </span>
-              <strong>{JSON.stringify(head.focusToken)}</strong>
-              <em>{formatProbability(head.maxAttention)}</em>
-            </div>
-          ))
+        <div className="attention-headline">
+          <div className="ev-col-title">All returned attention summaries</div>
+          <span>
+            {result.attention.available
+              ? `${result.attention.layers.length} layers · token ${result.attention.position}`
+              : "unavailable"}
+          </span>
+        </div>
+        {result.attention.layers.length > 0 ? (
+          <div className="attention-stack">
+            {result.attention.layers.map((layer) => (
+              <div className="attention-layer" key={layer.layer}>
+                <div className="attention-layer-head">
+                  <strong>Layer {layer.layer}</strong>
+                  <span>mean entropy {layer.meanEntropy.toFixed(4)}</span>
+                </div>
+                {layer.focusedHeads.map((head) => (
+                  <div className="attn-row" key={`${layer.layer}-${head.head}`}>
+                    <span>H{head.head}</span>
+                    <strong>
+                      pos {head.focusPosition} · {JSON.stringify(head.focusToken)}
+                    </strong>
+                    <em>{formatProbability(head.maxAttention)}</em>
+                    <small>entropy {head.entropy.toFixed(4)}</small>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="ev-v">Attention summaries were unavailable from this runner.</div>
         )}
@@ -1076,7 +1175,11 @@ function PatchView({ result }: { result: InterpretabilityResult }) {
       <div className="patch-summary">
         <EvRow k="Clean target log-prob" v={patching.cleanLogProb.toFixed(4)} />
         <EvRow k="Corrupted target log-prob" v={patching.corruptedLogProb.toFixed(4)} />
-        <EvRow k="Best restoring layer" v={`Layer ${best.layer} · ${formatProbability(best.clippedRecovery)}`} />
+        <EvRow
+          k="Best restoring layer"
+          v={`Layer ${best.layer} · ${formatProbability(best.clippedRecovery)}`}
+        />
+        <EvRow k="Best raw recovery" v={formatSignedNumber(best.recovery)} />
       </div>
       <div className="patch-bars">
         {patching.layers.map((layer) => (
@@ -1089,6 +1192,24 @@ function PatchView({ result }: { result: InterpretabilityResult }) {
               />
             </div>
             <strong>{formatProbability(layer.clippedRecovery)}</strong>
+            <em>raw {formatSignedNumber(layer.recovery)}</em>
+            <small>target log-prob {layer.targetLogProb.toFixed(4)}</small>
+          </div>
+        ))}
+      </div>
+      <div className="patch-table">
+        <div className="patch-table-head">
+          <span>Layer</span>
+          <span>Target log-prob</span>
+          <span>Raw recovery</span>
+          <span>Clipped recovery</span>
+        </div>
+        {patching.layers.map((layer) => (
+          <div className="patch-table-row" key={`table-${layer.layer}`}>
+            <span>L{layer.layer}</span>
+            <span>{layer.targetLogProb.toFixed(4)}</span>
+            <span>{formatSignedNumber(layer.recovery)}</span>
+            <span>{formatProbability(layer.clippedRecovery)}</span>
           </div>
         ))}
       </div>
@@ -1355,7 +1476,16 @@ function formatMs(value?: number): string {
 
 function formatProbability(value: number): string {
   if (!Number.isFinite(value)) return "n/a";
-  return `${Math.round(value * 100)}%`;
+  const percent = value * 100;
+  if (percent > 0 && percent < 0.01) return "<0.01%";
+  if (percent < 1) return `${percent.toFixed(2)}%`;
+  if (percent < 10) return `${percent.toFixed(1)}%`;
+  return `${Math.round(percent)}%`;
+}
+
+function formatSignedNumber(value: number): string {
+  if (!Number.isFinite(value)) return "n/a";
+  return `${value >= 0 ? "+" : ""}${value.toFixed(4)}`;
 }
 
 function formatDate(value: string): string {
