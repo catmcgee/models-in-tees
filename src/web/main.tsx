@@ -262,11 +262,13 @@ interface InterpretabilityRecord {
 }
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+const DEFAULT_INTERP_PROMPT = "The capital of France is";
+const DEFAULT_PATCH_PROMPT = "The capital of Germany is";
 
 function App() {
-  const [prompt, setPrompt] = React.useState("");
-  const [labMode, setLabMode] = React.useState<LabMode>("chat");
-  const [corruptedPrompt, setCorruptedPrompt] = React.useState("");
+  const [prompt, setPrompt] = React.useState(DEFAULT_INTERP_PROMPT);
+  const [labMode, setLabMode] = React.useState<LabMode>("lens");
+  const [corruptedPrompt, setCorruptedPrompt] = React.useState(DEFAULT_PATCH_PROMPT);
   const [targetToken, setTargetToken] = React.useState("");
   const [maxNewTokens, setMaxNewTokens] = React.useState(80);
   const [temperature, setTemperature] = React.useState(0.75);
@@ -393,8 +395,8 @@ function App() {
   function refresh() {
     setActiveRecord(null);
     setInterpRecord(null);
-    setPrompt("");
-    setCorruptedPrompt("");
+    setPrompt(DEFAULT_INTERP_PROMPT);
+    setCorruptedPrompt(DEFAULT_PATCH_PROMPT);
     setTargetToken("");
     refreshAll();
   }
@@ -506,11 +508,13 @@ function App() {
   const checkpointName = activeModel ? `${modelName} checkpoint` : "model checkpoint";
   const networkName = networkDisplayName(health?.network, solana?.rpcUrl);
   const teeName = teeRuntimeName(activeTeeEvidence, health);
-  const serviceName = activeModel ? `Private ${modelName} Verifier` : "Private Model Verifier";
+  const serviceName = activeModel
+    ? `Private ${modelName} Interpretability Lab`
+    : "Private Interpretability Lab";
   const proofSurface =
     labMode === "chat"
       ? `${teeName} generation with ${networkName} receipts`
-      : `${teeName} interpretability with signed receipts`;
+      : `redacted ${teeName} interpretability with signed receipts`;
   const actionLabel =
     labMode === "chat"
       ? running
@@ -588,20 +592,20 @@ function App() {
 
       {/* hero / composer */}
       <section className="panel hero-wide">
-        <span className="eyebrow">Private chat demo</span>
+        <span className="eyebrow">Private interpretability demo</span>
         <h1 className="headline">
-          Chat with {modelName} without seeing its <span className="accentword">weights.</span>
+          Probe {modelName} without seeing its <span className="accentword">weights.</span>
         </h1>
         <p className="lede">
-          This public UI sends prompts to a {privateModelName} runner while the{" "}
-          {checkpointName} stays off the frontend. Each answer comes back with a
-          signed receipt binding the prompt hash, output hash, model commitment,{" "}
-          {teeName} evidence, and optional {networkName} timestamp.
+          Run logit-lens, attention, and activation-patching experiments against a{" "}
+          {privateModelName} runner. The UI gets summaries, hashes, and signed
+          receipts, but not weights, raw activations, raw attention tensors, gradients,
+          or projection matrices. Chat is still here as a baseline receipt demo.
         </p>
 
         <div className="composer">
           <div className="mode-tabs" role="tablist" aria-label="Lab mode">
-            {(["chat", "lens", "patch"] as LabMode[]).map((mode) => (
+            {(["lens", "patch", "chat"] as LabMode[]).map((mode) => (
               <button
                 key={mode}
                 type="button"
@@ -621,7 +625,11 @@ function App() {
             <textarea
               id="chat-prompt"
               className="chat-input"
-              placeholder={`Ask ${modelName} something…`}
+              placeholder={
+                labMode === "chat"
+                  ? `Ask ${modelName} something…`
+                  : "Type a short prompt to inspect the model's next-token behavior…"
+              }
               value={prompt}
               spellCheck={false}
               onChange={(event) => setPrompt(event.target.value)}
@@ -760,7 +768,8 @@ function App() {
         ))}
       </section>
 
-      {/* output + proof */}
+      {/* chat output + proof */}
+      {labMode === "chat" && (
       <section className="lower-grid">
         <div className="panel">
           <div className="panel-head">
@@ -853,6 +862,7 @@ function App() {
           )}
         </div>
       </section>
+      )}
 
       {/* evidence drawer */}
       <section className="drawer" data-open={drawerOpen}>
@@ -931,7 +941,7 @@ function App() {
                 </div>
               ) : (
                 <div className="ev-v" style={{ marginTop: 2 }}>
-                  Run {modelName} to create a receipt.
+                  Run {modelName} to create a signed receipt.
                 </div>
               )}
             </div>
@@ -940,7 +950,7 @@ function App() {
       </section>
 
       <div className="foot">
-        {checkpointName} stays private · every answer is signed inside {teeName} ·
+        {checkpointName} stays private · every run is signed inside {teeName} ·
         optionally anchored on {networkName}
       </div>
     </div>
