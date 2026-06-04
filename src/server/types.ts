@@ -24,6 +24,88 @@ export interface GenerationResult {
   };
 }
 
+export interface LensToken {
+  rank: number;
+  token: string;
+  tokenId: number;
+  probability: number;
+}
+
+export interface LensLayer {
+  layer: number;
+  label: string;
+  topTokens: LensToken[];
+  target: {
+    rank: number;
+    probability: number;
+    logit: number;
+  };
+}
+
+export interface AttentionHeadSummary {
+  head: number;
+  focusPosition: number;
+  focusToken: string;
+  maxAttention: number;
+  entropy: number;
+}
+
+export interface AttentionLayerSummary {
+  layer: number;
+  meanEntropy: number;
+  focusedHeads: AttentionHeadSummary[];
+}
+
+export interface PatchLayerScore {
+  layer: number;
+  targetLogProb: number;
+  recovery: number;
+  clippedRecovery: number;
+}
+
+export interface InterpretabilityResult {
+  ok: true;
+  model: ModelInfo;
+  promptHash: string;
+  corruptedPromptHash?: string | null;
+  target: {
+    token: string;
+    tokenId: number;
+    source: "user" | "clean-final-argmax";
+    cleanLogProb: number;
+  };
+  lens: {
+    topK: number;
+    position: number;
+    layers: LensLayer[];
+  };
+  attention: {
+    available: boolean;
+    position?: number;
+    tokenCount?: number;
+    layers: AttentionLayerSummary[];
+  };
+  patching?: {
+    available: boolean;
+    cleanLogProb: number;
+    corruptedLogProb: number;
+    layers: PatchLayerScore[];
+  } | null;
+  params: {
+    topK: number;
+    maxPromptTokens: number;
+    rawActivationsReturned: false;
+    rawAttentionReturned: false;
+    weightsReturned: false;
+  };
+  redaction: {
+    exposes: string[];
+    withholds: string[];
+  };
+  latencyMs: number;
+  resultHash: string;
+}
+
 export interface WorkloadMeasurement {
   schema: "tee-ai-workload/v1";
   workloadHash: string;
@@ -138,12 +220,42 @@ export interface ReceiptPayload {
   solana?: SolanaCommitment | null;
 }
 
-export interface SignedReceipt {
-  payload: ReceiptPayload;
+export interface InterpretabilityReceiptPayload {
+  schema: "private-gpt2-interpretability-receipt/v1";
+  runId: string;
+  issuedAt: string;
+  promptHash: string;
+  corruptedPromptHash?: string | null;
+  targetToken: {
+    token: string;
+    tokenId: number;
+    source: "user" | "clean-final-argmax";
+  };
+  resultHash: string;
+  model: {
+    commitment: string;
+    architecture: Record<string, unknown>;
+    weightsPublic: false;
+  };
+  experiment: {
+    kind: "logit-lens-and-activation-patching";
+    params: InterpretabilityResult["params"];
+    redaction: InterpretabilityResult["redaction"];
+  };
+  runner: ReceiptPayload["runner"];
+}
+
+export type SignedPayloadPayload = ReceiptPayload | InterpretabilityReceiptPayload;
+
+export interface SignedPayload<TPayload extends SignedPayloadPayload = SignedPayloadPayload> {
+  payload: TPayload;
   signature: string;
   digest: string;
   algorithm: "Ed25519";
 }
+
+export type SignedReceipt = SignedPayload<ReceiptPayload>;
+export type SignedInterpretabilityReceipt = SignedPayload<InterpretabilityReceiptPayload>;
 
 export interface GenerationRecord {
   kind: "generation";
@@ -156,7 +268,20 @@ export interface GenerationRecord {
   createdAt: string;
 }
 
-export type StoredRecord = GenerationRecord;
+export interface InterpretabilityRecord {
+  kind: "interpretability";
+  id: string;
+  prompt: string;
+  corruptedPrompt?: string;
+  targetToken?: string;
+  result: InterpretabilityResult;
+  receipt: SignedInterpretabilityReceipt;
+  teeEvidence?: TeeEvidence | null;
+  solanaCommitment?: SolanaCommitment | null;
+  createdAt: string;
+}
+
+export type StoredRecord = GenerationRecord | InterpretabilityRecord;
 
 export interface AuditCheck {
   name: string;

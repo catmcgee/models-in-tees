@@ -12,7 +12,12 @@ import path from "node:path";
 import { config, solanaDir } from "./config.js";
 import { sha256Hex } from "./canonical.js";
 import { commitReceiptToAnchorProgram } from "./anchorCommit.js";
-import type { SignedReceipt, SolanaCommitment } from "./types.js";
+import type {
+  SignedInterpretabilityReceipt,
+  SignedPayload,
+  SignedReceipt,
+  SolanaCommitment
+} from "./types.js";
 
 const MEMO_PROGRAM_ID = new PublicKey(
   "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
@@ -59,26 +64,19 @@ export async function getSolanaStatus(): Promise<{
 }
 
 export async function commitReceiptToDevnet(
-  receipt: SignedReceipt,
+  receipt: SignedPayload,
   dryRun = false
 ): Promise<SolanaCommitment> {
-  const programCommitment = await commitReceiptToAnchorProgram(receipt, dryRun);
-  if (programCommitment.status !== "failed") {
-    return programCommitment;
+  if (isGenerationReceipt(receipt)) {
+    const programCommitment = await commitReceiptToAnchorProgram(receipt, dryRun);
+    if (programCommitment.status !== "failed") {
+      return programCommitment;
+    }
   }
 
   const connection = getBaseConnection();
   const payer = loadOrCreateDevnetPayer();
-  const memoRecord = {
-    schema: "tee-ai-devnet-memo/v1",
-    receiptDigest: receipt.digest,
-    modelCommitment: receipt.payload.model.commitment,
-    promptHash: receipt.payload.promptHash,
-    outputHash: receipt.payload.outputHash,
-    paramsHash: receipt.payload.paramsHash,
-    teeEvidenceHash: receipt.payload.runner.teeEvidenceHash || null,
-    issuedAt: receipt.payload.issuedAt
-  };
+  const memoRecord = buildMemoRecord(receipt);
   const memo = `TEEAI:${JSON.stringify(memoRecord)}`;
   const memoHash = sha256Hex(memo);
 
@@ -130,6 +128,49 @@ export async function commitReceiptToDevnet(
       error: error instanceof Error ? error.message : String(error)
     };
   }
+}
+
+function isGenerationReceipt(receipt: SignedPayload): receipt is SignedReceipt {
+  return receipt.payload.schema === "private-gpt2-receipt/v1";
+}
+
+function isInterpretabilityReceipt(
+  receipt: SignedPayload
+): receipt is SignedInterpretabilityReceipt {
+  return receipt.payload.schema === "private-gpt2-interpretability-receipt/v1";
+}
+
+function buildMemoRecord(receipt: SignedPayload): Record<string, unknown> {
+  if (isGenerationReceipt(receipt)) {
+    return {
+      schema: "tee-ai-devnet-memo/v1",
+      receiptSchema: receipt.payload.schema,
+      receiptDigest: receipt.digest,
+      modelCommitment: receipt.payload.model.commitment,
+      promptHash: receipt.payload.promptHash,
+      outputHash: receipt.payload.outputHash,
+      paramsHash: receipt.payload.paramsHash,
+      teeEvidenceHash: receipt.payload.runner.teeEvidenceHash || null,
+      issuedAt: receipt.payload.issuedAt
+    };
+  }
+
+  if (!isInterpretabilityReceipt(receipt)) {
+    throw new Error(`Unsupported receipt schema: ${receipt.payload.schema}`);
+  }
+
+  return {
+    schema: "tee-ai-devnet-interpretability-memo/v1",
+    receiptSchema: receipt.payload.schema,
+    receiptDigest: receipt.digest,
+    modelCommitment: receipt.payload.model.commitment,
+    promptHash: receipt.payload.promptHash,
+    corruptedPromptHash: receipt.payload.corruptedPromptHash || null,
+    targetTokenId: receipt.payload.targetToken.tokenId,
+    resultHash: receipt.payload.resultHash,
+    teeEvidenceHash: receipt.payload.runner.teeEvidenceHash || null,
+    issuedAt: receipt.payload.issuedAt
+  };
 }
 
 export async function ensurePayerHasFunds(

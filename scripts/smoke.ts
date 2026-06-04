@@ -54,6 +54,56 @@ try {
     throw new Error("Dry-run Solana commitment did not return dry-run status");
   }
 
+  const interpreted = await postJson(`${baseUrl}/api/interpret`, {
+    prompt: "The capital of France is",
+    corruptedPrompt: "The capital of Germany is",
+    targetToken: " Paris",
+    topK: 3,
+    maxPromptTokens: 64
+  });
+  const interpretRecord = interpreted.record;
+  if (!interpretRecord?.result?.resultHash || !interpretRecord?.receipt?.digest) {
+    throw new Error("Interpretability endpoint did not return a result hash and receipt");
+  }
+  if (
+    interpretRecord.result.params.rawActivationsReturned !== false ||
+    interpretRecord.result.params.rawAttentionReturned !== false ||
+    interpretRecord.result.params.weightsReturned !== false
+  ) {
+    throw new Error("Interpretability endpoint exposed raw model internals");
+  }
+  assertNoForbiddenKeys(interpretRecord.result, [
+    "hiddenStates",
+    "rawHiddenStates",
+    "attentionTensor",
+    "attentionWeights",
+    "stateDict",
+    "parameters",
+    "gradients",
+    "mlpActivations"
+  ]);
+  const interpretVerification = await postJson(`${baseUrl}/api/verify`, {
+    receipt: interpretRecord.receipt
+  });
+  if (!interpretVerification.verification?.ok) {
+    throw new Error(
+      `Interpretability receipt verification failed: ${JSON.stringify(interpretVerification)}`
+    );
+  }
+  const interpretAudit = await expectOk(
+    `${baseUrl}/api/receipts/${interpretRecord.id}/audit`
+  );
+  if (!interpretAudit.audit?.ok) {
+    throw new Error(`Interpretability receipt audit failed: ${JSON.stringify(interpretAudit)}`);
+  }
+  const interpretDryRun = await postJson(
+    `${baseUrl}/api/receipts/${interpretRecord.id}/commit?dryRun=1`,
+    {}
+  );
+  if (interpretDryRun.solanaCommitment?.status !== "dry-run") {
+    throw new Error("Interpretability dry-run Solana commitment did not return dry-run status");
+  }
+
   console.log(
     JSON.stringify(
       {
@@ -63,6 +113,10 @@ try {
         teeEvidenceHash: record.receipt.payload.runner.teeEvidenceHash,
         workloadHash: audit.audit.workloadHash,
         dryRunMemoHash: dryRun.solanaCommitment.memoHash,
+        interpretRunId: interpretRecord.id,
+        interpretReceiptDigest: interpretRecord.receipt.digest,
+        interpretResultHash: interpretRecord.result.resultHash,
+        interpretDryRunMemoHash: interpretDryRun.solanaCommitment.memoHash,
         generatedTokens: record.generation.tokenCount.generated
       },
       null,
@@ -93,4 +147,25 @@ async function postJson(url: string, body: unknown): Promise<any> {
     throw new Error(`${url} failed: ${JSON.stringify(payload)}`);
   }
   return payload;
+}
+
+function assertNoForbiddenKeys(value: unknown, forbidden: string[]): void {
+  const keys = new Set(forbidden);
+  const stack = [value];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current || typeof current !== "object") {
+      continue;
+    }
+    if (Array.isArray(current)) {
+      stack.push(...current);
+      continue;
+    }
+    for (const [key, child] of Object.entries(current)) {
+      if (keys.has(key)) {
+        throw new Error(`Interpretability result exposed forbidden field: ${key}`);
+      }
+      stack.push(child);
+    }
+  }
 }

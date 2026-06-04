@@ -12,7 +12,12 @@ import { base64url, canonicalJson, fromBase64url, sha256Hex } from "./canonical.
 import { summarizeTeeEvidence } from "./teeEvidence.js";
 import type {
   GenerationResult,
+  InterpretabilityResult,
+  InterpretabilityReceiptPayload,
   ReceiptPayload,
+  SignedInterpretabilityReceipt,
+  SignedPayload,
+  SignedPayloadPayload,
   SignedReceipt,
   TeeEvidence
 } from "./types.js";
@@ -61,10 +66,55 @@ export function createSignedGenerationReceipt(
   return signReceiptPayload(payload, keypair.privateKeyPem);
 }
 
-export function signReceiptPayload(
-  payload: ReceiptPayload,
+export function createSignedInterpretabilityReceipt(
+  runId: string,
+  result: InterpretabilityResult,
+  teeEvidence?: TeeEvidence
+): SignedInterpretabilityReceipt {
+  const keypair = loadOrCreateAttestationKeys();
+  const publicKeyFingerprint = sha256Hex(keypair.publicKeyPem).slice(0, 32);
+  const payload: InterpretabilityReceiptPayload = {
+    schema: "private-gpt2-interpretability-receipt/v1",
+    runId,
+    issuedAt: new Date().toISOString(),
+    promptHash: result.promptHash,
+    corruptedPromptHash: result.corruptedPromptHash,
+    targetToken: {
+      token: result.target.token,
+      tokenId: result.target.tokenId,
+      source: result.target.source
+    },
+    resultHash: result.resultHash,
+    model: {
+      commitment: result.model.commitment,
+      architecture: result.model.architecture,
+      weightsPublic: false
+    },
+    experiment: {
+      kind: "logit-lens-and-activation-patching",
+      params: result.params,
+      redaction: result.redaction
+    },
+    runner: {
+      teeMode: config.teeMode,
+      teeProvider: config.teeProvider,
+      publicKeyPem: keypair.publicKeyPem,
+      publicKeyFingerprint,
+      ...(teeEvidence
+        ? {
+            teeEvidenceHash: teeEvidence.evidenceHash,
+            teeEvidence: summarizeTeeEvidence(teeEvidence)
+          }
+        : {})
+    }
+  };
+  return signReceiptPayload(payload, keypair.privateKeyPem);
+}
+
+export function signReceiptPayload<TPayload extends SignedPayloadPayload>(
+  payload: TPayload,
   privateKeyPem?: string
-): SignedReceipt {
+): SignedPayload<TPayload> {
   const keypair = privateKeyPem
     ? { privateKeyPem, publicKeyPem: payload.runner.publicKeyPem }
     : loadOrCreateAttestationKeys();
@@ -78,7 +128,7 @@ export function signReceiptPayload(
   };
 }
 
-export function verifySignedReceipt(receipt: SignedReceipt): {
+export function verifySignedReceipt(receipt: SignedPayload): {
   ok: boolean;
   digest: string;
   reason?: string;

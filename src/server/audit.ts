@@ -4,7 +4,7 @@ import { config } from "./config.js";
 import { fromBase64url, sha256Hex } from "./canonical.js";
 import { verifySignedReceipt } from "./receipts.js";
 import { getWorkloadMeasurement } from "./workload.js";
-import type { AuditCheck, ReceiptAudit, SignedReceipt, TeeEvidence } from "./types.js";
+import type { AuditCheck, ReceiptAudit, SignedPayload, TeeEvidence } from "./types.js";
 
 const googleJwksUrl =
   "https://www.googleapis.com/service_accounts/v1/metadata/jwk/signer@confidentialspace-sign.iam.gserviceaccount.com";
@@ -21,7 +21,7 @@ interface JsonWebKeyWithKid {
 }
 
 export async function auditReceiptEvidence(
-  receipt: SignedReceipt,
+  receipt: SignedPayload,
   evidence?: TeeEvidence | null
 ): Promise<ReceiptAudit> {
   const checks: AuditCheck[] = [];
@@ -81,7 +81,7 @@ export async function auditReceiptEvidence(
 }
 
 function buildAudit(
-  receipt: SignedReceipt,
+  receipt: SignedPayload,
   evidence: TeeEvidence | null | undefined,
   checks: AuditCheck[]
 ): ReceiptAudit {

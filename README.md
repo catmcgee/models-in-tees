@@ -1,9 +1,10 @@
 # Private Model Verifier
 
 Private Model Verifier is a public test harness for a private GPT-2-style model.
-Users submit prompts, a hidden PyTorch/Hugging Face GPT-2 runner generates text,
-and the API returns a signed receipt that binds the prompt hash, output hash,
-model commitment, TEE evidence, and optional Solana devnet timestamp.
+Users submit prompts, a hidden PyTorch/Hugging Face GPT-2 runner generates text
+or redacted interpretability summaries, and the API returns signed receipts that
+bind prompt hashes, result hashes, model commitments, TEE evidence, and optional
+Solana devnet timestamps.
 
 The demo is not a ZK proof system. The privacy claim comes from keeping model
 weights and receipt keys outside the public source tree and, in
@@ -15,6 +16,8 @@ Google Confidential VM.
 - Frontend: Vite + React verifier demo
 - API: Express + TypeScript
 - Model runner: GPT-2 causal language model
+- Interpretability lab: logit-lens summaries, attention aggregates, and
+  layer-level activation patching scores
 - Receipt protocol: canonical JSON + Ed25519 signatures
 - TEE evidence: Google Confidential VM attestation token when available
 - Chain commit: Solana devnet Anchor program, with Memo fallback
@@ -69,9 +72,10 @@ npm run chain:test
 ```
 
 `npm test` runs the model self-test, TypeScript checks, production frontend
-build, and API smoke test. `chain:test` submits a live devnet receipt.
-`llm:test` downloads/loads the configured GPT-2 model and prints its private
-model commitment.
+build, and API smoke test. The smoke test covers generation receipts,
+interpretability receipts, redaction flags, audit checks, and dry-run Solana
+commits. `chain:test` submits a live devnet receipt. `llm:test` downloads/loads
+the configured GPT-2 model and prints its private model commitment.
 
 ## Vercel Frontend
 
@@ -96,6 +100,7 @@ GET  /api/health
 GET  /api/llm
 GET  /api/tee/evidence
 POST /api/generate
+POST /api/interpret
 POST /api/verify
 POST /api/audit
 GET  /api/solana/status
@@ -112,6 +117,20 @@ Production defaults are conservative:
 - `ALLOW_PUBLIC_RECEIPT_LISTING=0` prevents listing all stored receipts.
 
 Set an override to `1` only when you explicitly want that behavior.
+
+## Interpretability Redaction
+
+`POST /api/interpret` supports two public experiments:
+
+- Lens mode returns per-layer top-k next-token predictions, target-token ranks,
+  target probabilities, and final-token attention focus aggregates.
+- Patch mode additionally compares a clean prompt to a corrupted prompt and
+  returns per-layer target-token recovery scores.
+
+The endpoint does not return model weights, raw hidden-state vectors, raw
+attention tensors, MLP activations, projection matrices, or gradients. The
+receipt signs a hash of the redacted result so users can discuss and reproduce
+the public artifact without receiving the private internals.
 
 ## Solana Devnet
 

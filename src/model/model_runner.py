@@ -67,7 +67,11 @@ def load_llm() -> Tuple[Any, Any]:
     LLM_DIR.mkdir(parents=True, exist_ok=True)
     HF_HOME.mkdir(parents=True, exist_ok=True)
     tokenizer = AutoTokenizer.from_pretrained(LLM_MODEL_ID, cache_dir=str(LLM_DIR))
-    model = AutoModelForCausalLM.from_pretrained(LLM_MODEL_ID, cache_dir=str(LLM_DIR))
+    model = AutoModelForCausalLM.from_pretrained(
+        LLM_MODEL_ID,
+        cache_dir=str(LLM_DIR),
+        attn_implementation="eager",
+    )
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
     model.eval()
@@ -181,6 +185,278 @@ def generate_text(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def interpret_model(payload: Dict[str, Any]) -> Dict[str, Any]:
+    tokenizer, model = load_llm()
+    prompt = str(payload.get("prompt", "")).strip()
+    if not prompt:
+        return {"ok": False, "error": "Prompt is required."}
+
+    corrupted_prompt = str(payload.get("corruptedPrompt", "")).strip()
+    target_text = str(payload.get("targetToken", ""))
+    if not target_text.strip():
+        target_text = ""
+    top_k = clamp_int(payload.get("topK"), 1, 5, 5)
+    max_length = clamp_int(payload.get("maxPromptTokens"), 16, 192, 128)
+
+    started = time.perf_counter()
+    clean_inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=max_length)
+    with torch.no_grad():
+        clean_outputs = model(
+            **clean_inputs,
+            output_hidden_states=True,
+            output_attentions=True,
+            use_cache=False,
+        )
+
+    clean_logits = clean_outputs.logits[0, -1, :]
+    target_id = resolve_target_token_id(tokenizer, clean_logits, target_text)
+    target_token = tokenizer.decode([target_id])
+
+    lens_layers = build_logit_lens(tokenizer, model, clean_outputs.hidden_states, target_id, top_k)
+    attention = summarize_attention(tokenizer, clean_inputs["input_ids"][0], clean_outputs.attentions)
+
+    patching = None
+    if corrupted_prompt:
+        patching = activation_patch_scores(
+            tokenizer,
+            model,
+            corrupted_prompt,
+            clean_outputs.hidden_states,
+            target_id,
+            max_length,
+        )
+
+    result = {
+        "ok": True,
+        "model": llm_info(),
+        "promptHash": sha256_hex(prompt.encode("utf-8")),
+        "corruptedPromptHash": sha256_hex(corrupted_prompt.encode("utf-8"))
+        if corrupted_prompt
+        else None,
+        "target": {
+            "token": target_token,
+            "tokenId": target_id,
+            "source": "user" if target_text else "clean-final-argmax",
+            "cleanLogProb": round(logprob_for_token(clean_logits, target_id), 6),
+        },
+        "lens": {
+            "topK": top_k,
+            "position": int(clean_inputs["input_ids"].shape[-1] - 1),
+            "layers": lens_layers,
+        },
+        "attention": attention,
+        "patching": patching,
+        "params": {
+            "topK": top_k,
+            "maxPromptTokens": max_length,
+            "rawActivationsReturned": False,
+            "rawAttentionReturned": False,
+            "weightsReturned": False,
+        },
+        "redaction": {
+            "exposes": [
+                "top-k logit-lens tokens",
+                "target-token ranks and probabilities",
+                "per-head aggregate attention summaries",
+                "layer-level patching recovery scores",
+                "hashes and signed receipt metadata",
+            ],
+            "withholds": [
+                "model weights",
+                "raw hidden-state vectors",
+                "raw attention tensors",
+                "MLP activations",
+                "projection matrices",
+                "gradients",
+            ],
+        },
+        "latencyMs": 0,
+    }
+    result["latencyMs"] = round((time.perf_counter() - started) * 1000.0, 3)
+    result["resultHash"] = sha256_hex(
+        json.dumps(result_without_model(result), sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    )
+    return result
+
+
+def build_logit_lens(
+    tokenizer: Any,
+    model: Any,
+    hidden_states: Tuple[Any, ...],
+    target_id: int,
+    top_k: int,
+) -> List[Dict[str, Any]]:
+    layers: List[Dict[str, Any]] = []
+    with torch.no_grad():
+        for index, hidden in enumerate(hidden_states):
+            projected_hidden = hidden if index == len(hidden_states) - 1 else model.transformer.ln_f(hidden)
+            logits = model.lm_head(projected_hidden)[0, -1, :]
+            probs = torch.softmax(logits, dim=-1)
+            top = torch.topk(probs, k=top_k)
+            target_logit = logits[target_id]
+            target_prob = probs[target_id]
+            rank = int((logits > target_logit).sum().item() + 1)
+            layers.append(
+                {
+                    "layer": index,
+                    "label": "embedding" if index == 0 else f"block-{index}",
+                    "topTokens": [
+                        {
+                            "rank": rank_index + 1,
+                            "token": tokenizer.decode([int(token_id)]),
+                            "tokenId": int(token_id),
+                            "probability": round(float(prob), 6),
+                        }
+                        for rank_index, (token_id, prob) in enumerate(
+                            zip(top.indices.tolist(), top.values.tolist())
+                        )
+                    ],
+                    "target": {
+                        "rank": rank,
+                        "probability": round(float(target_prob), 6),
+                        "logit": round(float(target_logit), 4),
+                    },
+                }
+            )
+    return layers
+
+
+def summarize_attention(
+    tokenizer: Any,
+    input_ids: Any,
+    attentions: Optional[Tuple[Any, ...]],
+) -> Dict[str, Any]:
+    if not attentions:
+        return {"available": False, "layers": []}
+
+    tokens = [tokenizer.decode([int(token_id)]) for token_id in input_ids.tolist()]
+    layers: List[Dict[str, Any]] = []
+    for layer_index, layer_attention in enumerate(attentions):
+        if layer_attention is None:
+            continue
+        # Shape: batch, heads, query_position, key_position. Only summarize the
+        # final-token query so no full attention tensor leaves the TEE.
+        final_attention = layer_attention[0, :, -1, :]
+        head_summaries: List[Dict[str, Any]] = []
+        entropies: List[float] = []
+        for head_index, weights in enumerate(final_attention):
+            safe_weights = torch.clamp(weights, min=1e-12)
+            entropy = float(-(safe_weights * torch.log(safe_weights)).sum().item())
+            max_index = int(torch.argmax(weights).item())
+            max_attention = float(weights[max_index].item())
+            entropies.append(entropy)
+            head_summaries.append(
+                {
+                    "head": head_index,
+                    "focusPosition": max_index,
+                    "focusToken": tokens[max_index] if max_index < len(tokens) else "",
+                    "maxAttention": round(max_attention, 6),
+                    "entropy": round(entropy, 4),
+                }
+            )
+        focused_heads = sorted(
+            head_summaries,
+            key=lambda item: (item["maxAttention"], -item["entropy"]),
+            reverse=True,
+        )[:3]
+        layers.append(
+            {
+                "layer": layer_index + 1,
+                "meanEntropy": round(sum(entropies) / max(len(entropies), 1), 4),
+                "focusedHeads": focused_heads,
+            }
+        )
+    return {
+        "available": bool(layers),
+        "position": int(len(tokens) - 1),
+        "tokenCount": int(len(tokens)),
+        "layers": layers,
+    }
+
+
+def activation_patch_scores(
+    tokenizer: Any,
+    model: Any,
+    corrupted_prompt: str,
+    clean_hidden_states: Tuple[Any, ...],
+    target_id: int,
+    max_length: int,
+) -> Dict[str, Any]:
+    corrupted_inputs = tokenizer(
+        corrupted_prompt, return_tensors="pt", truncation=True, max_length=max_length
+    )
+    with torch.no_grad():
+        clean_final_logits = model.lm_head(clean_hidden_states[-1])[0, -1, :]
+        corrupted_outputs = model(
+            **corrupted_inputs,
+            output_hidden_states=True,
+            use_cache=False,
+        )
+        corrupted_logits = corrupted_outputs.logits[0, -1, :]
+
+    clean_logprob = logprob_for_token(clean_final_logits, target_id)
+    corrupted_logprob = logprob_for_token(corrupted_logits, target_id)
+    denominator = clean_logprob - corrupted_logprob
+    layers: List[Dict[str, Any]] = []
+
+    for layer_index in range(len(model.transformer.h)):
+        clean_layer_hidden = clean_hidden_states[layer_index + 1].detach()
+
+        def patch_hook(_module: Any, _inputs: Any, output: Any) -> Any:
+            hidden = output[0] if isinstance(output, tuple) else output
+            patched = hidden.clone()
+            patched[:, -1, :] = clean_layer_hidden[:, -1, :]
+            if isinstance(output, tuple):
+                return (patched, *output[1:])
+            return patched
+
+        handle = model.transformer.h[layer_index].register_forward_hook(patch_hook)
+        try:
+            with torch.no_grad():
+                patched_outputs = model(**corrupted_inputs, use_cache=False)
+                patched_logits = patched_outputs.logits[0, -1, :]
+        finally:
+            handle.remove()
+
+        patched_logprob = logprob_for_token(patched_logits, target_id)
+        recovery = 0.0 if abs(denominator) < 1e-9 else (patched_logprob - corrupted_logprob) / denominator
+        layers.append(
+            {
+                "layer": layer_index + 1,
+                "targetLogProb": round(float(patched_logprob), 6),
+                "recovery": round(float(recovery), 6),
+                "clippedRecovery": round(float(max(0.0, min(1.0, recovery))), 6),
+            }
+        )
+
+    return {
+        "available": True,
+        "cleanLogProb": round(float(clean_logprob), 6),
+        "corruptedLogProb": round(float(corrupted_logprob), 6),
+        "layers": layers,
+    }
+
+
+def resolve_target_token_id(tokenizer: Any, clean_logits: Any, target_text: str) -> int:
+    if target_text:
+        token_ids = tokenizer.encode(target_text, add_special_tokens=False)
+        if not token_ids and not target_text.startswith(" "):
+            token_ids = tokenizer.encode(f" {target_text}", add_special_tokens=False)
+        if token_ids:
+            return int(token_ids[0])
+    return int(torch.argmax(clean_logits).item())
+
+
+def logprob_for_token(logits: Any, token_id: int) -> float:
+    return float(torch.log_softmax(logits, dim=-1)[token_id].item())
+
+
+def result_without_model(result: Dict[str, Any]) -> Dict[str, Any]:
+    return {key: value for key, value in result.items() if key not in {"model", "latencyMs", "resultHash"}}
+
+
 def selftest() -> Dict[str, Any]:
     result = generate_text(
         {
@@ -229,7 +505,9 @@ def emit(payload: Dict[str, Any]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["info", "llm-info", "generate", "selftest"])
+    parser.add_argument(
+        "command", choices=["info", "llm-info", "generate", "interpret", "selftest"]
+    )
     args = parser.parse_args()
 
     if args.command in {"info", "llm-info"}:
@@ -242,6 +520,17 @@ def main() -> None:
             emit({"ok": False, "error": "Expected a JSON object."})
             sys.exit(2)
         result = generate_text(payload)
+        emit(result)
+        if not result.get("ok"):
+            sys.exit(2)
+        return
+
+    if args.command == "interpret":
+        payload = read_json_stdin()
+        if not isinstance(payload, dict):
+            emit({"ok": False, "error": "Expected a JSON object."})
+            sys.exit(2)
+        result = interpret_model(payload)
         emit(result)
         if not result.get("ok"):
             sys.exit(2)

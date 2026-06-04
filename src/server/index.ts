@@ -7,9 +7,10 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { auditReceiptEvidence } from "./audit.js";
 import { config, rootDir } from "./config.js";
-import { generateText, getLlmInfo } from "./modelRunner.js";
+import { generateText, getLlmInfo, runInterpretability } from "./modelRunner.js";
 import {
   createSignedGenerationReceipt,
+  createSignedInterpretabilityReceipt,
   verifySignedReceipt
 } from "./receipts.js";
 import { commitReceiptToDevnet, getSolanaStatus } from "./solana.js";
@@ -19,7 +20,7 @@ import {
   redactTeeEvidence,
   summarizeTeeEvidence
 } from "./teeEvidence.js";
-import type { SignedReceipt, StoredRecord } from "./types.js";
+import type { SignedPayload, StoredRecord } from "./types.js";
 
 const generateSchema = z.object({
   prompt: z.string().min(1).max(1800),
@@ -27,6 +28,14 @@ const generateSchema = z.object({
   temperature: z.number().min(0.1).max(1.5).default(0.75),
   topP: z.number().min(0.1).max(1).default(0.92),
   seed: z.number().int().optional()
+});
+
+const interpretSchema = z.object({
+  prompt: z.string().min(1).max(1200),
+  corruptedPrompt: z.string().max(1200).optional(),
+  targetToken: z.string().max(80).optional(),
+  topK: z.number().int().min(1).max(5).default(5),
+  maxPromptTokens: z.number().int().min(16).max(192).default(128)
 });
 
 export function createApp(): express.Express {
@@ -81,6 +90,36 @@ export function createApp(): express.Express {
     }
   });
 
+  app.post("/api/interpret", async (req, res) => {
+    try {
+      const parsed = interpretSchema.parse(req.body);
+      const result = await runInterpretability(parsed);
+      const id = `interp-${Date.now().toString(36)}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+      const teeEvidence = await getTeeEvidence({ includeToken: true });
+      const receipt = createSignedInterpretabilityReceipt(id, result, teeEvidence);
+      const record = saveRecord({
+        kind: "interpretability",
+        id,
+        prompt: parsed.prompt,
+        corruptedPrompt: parsed.corruptedPrompt || undefined,
+        targetToken: parsed.targetToken || undefined,
+        result,
+        receipt,
+        teeEvidence,
+        solanaCommitment: null,
+        createdAt: new Date().toISOString()
+      });
+      res.json({
+        ok: true,
+        record: publicRecord(record)
+      });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
   app.get("/api/tee/evidence", async (req, res) => {
     try {
       const includeToken = req.query.includeToken === "1" && config.allowRawTeeEvidence;
@@ -121,7 +160,9 @@ export function createApp(): express.Express {
 
   app.get("/api/receipts", (_req, res) => {
     const records = config.allowPublicReceiptListing
-      ? listRecords().map(publicRecord)
+      ? listRecords()
+          .filter((record) => record.kind === "generation")
+          .map(publicRecord)
       : [];
     res.json({ ok: true, records });
   });
@@ -186,7 +227,7 @@ export function createApp(): express.Express {
   });
 
   app.post("/api/verify", (req, res) => {
-    const receipt = req.body?.receipt as SignedReceipt | undefined;
+    const receipt = req.body?.receipt as SignedPayload | undefined;
     if (!receipt) {
       res.status(400).json({ ok: false, error: "Missing receipt" });
       return;
@@ -196,7 +237,7 @@ export function createApp(): express.Express {
 
   app.post("/api/audit", async (req, res) => {
     try {
-      const receipt = req.body?.receipt as SignedReceipt | undefined;
+      const receipt = req.body?.receipt as SignedPayload | undefined;
       if (!receipt) {
         res.status(400).json({ ok: false, error: "Missing receipt" });
         return;

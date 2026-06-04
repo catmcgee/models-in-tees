@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { config, hfDir, llmDir, rootDir } from "./config.js";
-import type { GenerationResult, ModelInfo } from "./types.js";
+import type { GenerationResult, InterpretabilityResult, ModelInfo } from "./types.js";
 
 const venvPython = path.join(rootDir, ".venv", "bin", "python");
 const pythonBinary = fs.existsSync(venvPython) ? venvPython : "python3";
@@ -30,8 +30,22 @@ export async function generateText(payload: {
   return result as GenerationResult;
 }
 
+export async function runInterpretability(payload: {
+  prompt: string;
+  corruptedPrompt?: string;
+  targetToken?: string;
+  topK?: number;
+  maxPromptTokens?: number;
+}): Promise<InterpretabilityResult> {
+  const result = await runPython("interpret", payload);
+  if (!result.ok) {
+    throw new Error(result.error || "GPT-2 interpretability run failed");
+  }
+  return result as InterpretabilityResult;
+}
+
 async function runPython(
-  command: "llm-info" | "generate" | "selftest",
+  command: "llm-info" | "generate" | "interpret" | "selftest",
   payload: Record<string, unknown>
 ): Promise<any> {
   return new Promise((resolve, reject) => {
