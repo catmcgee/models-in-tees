@@ -267,8 +267,9 @@ const DEFAULT_PATCH_PROMPT = "The capital of Germany is";
 
 function App() {
   const [prompt, setPrompt] = React.useState(DEFAULT_INTERP_PROMPT);
-  const [labMode, setLabMode] = React.useState<LabMode>("lens");
+  const [labMode, setLabMode] = React.useState<LabMode>("chat");
   const [corruptedPrompt, setCorruptedPrompt] = React.useState(DEFAULT_PATCH_PROMPT);
+  const [contrastEdited, setContrastEdited] = React.useState(false);
   const [targetToken, setTargetToken] = React.useState("");
   const [maxNewTokens, setMaxNewTokens] = React.useState(80);
   const [temperature, setTemperature] = React.useState(0.75);
@@ -289,6 +290,7 @@ function App() {
   const [error, setError] = React.useState<string | null>(null);
   const [dryRunCommit, setDryRunCommit] = React.useState(false);
   const [samplingOpen, setSamplingOpen] = React.useState(false);
+  const [analysisOpen, setAnalysisOpen] = React.useState(false);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [verification, setVerification] =
     React.useState<VerificationState>("unchecked");
@@ -397,21 +399,35 @@ function App() {
     setInterpRecord(null);
     setPrompt(DEFAULT_INTERP_PROMPT);
     setCorruptedPrompt(DEFAULT_PATCH_PROMPT);
+    setContrastEdited(false);
     setTargetToken("");
     refreshAll();
   }
 
   function send() {
     if (busy || prompt.trim().length < 1) return;
-    if (labMode === "chat") {
-      runGeneration();
+    if (prompt.length > 1200) {
+      setError("Prompts are capped at 1,200 characters so Chat, Lens, and Patch can share one run.");
       return;
     }
-    if (labMode === "patch" && corruptedPrompt.trim().length < 1) {
-      setError("Patch mode needs a corrupted prompt to compare against the clean prompt.");
-      return;
+    runAllViews();
+  }
+
+  function updatePrompt(nextPrompt: string) {
+    setPrompt(nextPrompt);
+    if (!contrastEdited) {
+      setCorruptedPrompt(makeContrastPrompt(nextPrompt));
     }
-    runInterpretability();
+  }
+
+  function updateCorruptedPrompt(nextPrompt: string) {
+    setContrastEdited(true);
+    setCorruptedPrompt(nextPrompt);
+  }
+
+  function resetContrastPrompt() {
+    setContrastEdited(false);
+    setCorruptedPrompt(makeContrastPrompt(prompt));
   }
 
   function handleComposerKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -421,12 +437,21 @@ function App() {
     }
   }
 
-  async function runGeneration() {
-    setBusy("Running GPT-2");
+  async function runAllViews() {
+    const cleanPrompt = prompt.trim();
+    const patchPrompt = (corruptedPrompt.trim() || makeContrastPrompt(cleanPrompt)).slice(0, 1200);
+    setBusy("Running all views");
     setError(null);
+    setCorruptedPrompt(patchPrompt);
+
+    let completed = 0;
+    let generationSucceeded = false;
+    let interpretabilitySucceeded = false;
+    const failures: string[] = [];
+
     try {
       const body = await apiPost<{ record: GenerationRecord }>("/api/generate", {
-        prompt,
+        prompt: cleanPrompt,
         maxNewTokens,
         temperature,
         topP
@@ -437,23 +462,16 @@ function App() {
         body.record,
         ...current.filter((record) => record.id !== body.record.id)
       ]);
+      completed += 1;
+      generationSucceeded = true;
     } catch (err) {
-      setError(toError(err));
-    } finally {
-      setBusy(null);
+      failures.push(`Chat failed: ${toError(err)}`);
     }
-  }
 
-  async function runInterpretability() {
-    setBusy("Running interpretability");
-    setError(null);
     try {
       const body = await apiPost<{ record: InterpretabilityRecord }>("/api/interpret", {
-        prompt,
-        corruptedPrompt:
-          labMode === "patch" && corruptedPrompt.trim()
-            ? corruptedPrompt.trim()
-            : undefined,
+        prompt: cleanPrompt,
+        corruptedPrompt: patchPrompt,
         targetToken: targetToken.trim().length ? targetToken : undefined,
         topK: interpTopK,
         maxPromptTokens: interpMaxPromptTokens
@@ -461,10 +479,23 @@ function App() {
       setInterpRecord(body.record);
       setModel(body.record.result.model);
       setDrawerOpen(true);
+      completed += 1;
+      interpretabilitySucceeded = true;
     } catch (err) {
-      setError(toError(err));
+      failures.push(`Lens/Patch failed: ${toError(err)}`);
     } finally {
       setBusy(null);
+    }
+
+    if (failures.length > 0) {
+      setError(failures.join(" "));
+    }
+    if (completed === 0) {
+      setDrawerOpen(false);
+    } else if (generationSucceeded) {
+      setLabMode("chat");
+    } else if (interpretabilitySucceeded) {
+      setLabMode("lens");
     }
   }
 
@@ -489,8 +520,9 @@ function App() {
     }
   }
 
-  const running = busy === "Running GPT-2";
-  const interpreting = busy === "Running interpretability";
+  const runningAll = busy === "Running all views";
+  const running = busy === "Running GPT-2" || runningAll;
+  const interpreting = busy === "Running interpretability" || runningAll;
   const activeReceipt =
     labMode === "chat" ? activeRecord?.receipt : interpRecord?.receipt || activeRecord?.receipt;
   const receiptVerification =
@@ -515,16 +547,13 @@ function App() {
     labMode === "chat"
       ? `${teeName} generation with ${networkName} receipts`
       : `redacted ${teeName} interpretability with signed receipts`;
-  const actionLabel =
-    labMode === "chat"
-      ? running
-        ? "Running…"
-        : "Send"
-      : interpreting
-        ? "Interpreting…"
-        : labMode === "lens"
-          ? "Run lens"
-          : "Run patch";
+  const actionLabel = runningAll ? "Running all views…" : busy ? busy : "Ask and analyze";
+  const tabReady: Record<LabMode, boolean> = {
+    chat: Boolean(activeRecord),
+    lens: Boolean(interpRecord),
+    patch: Boolean(interpRecord?.result.patching?.available)
+  };
+  const lastRunPrompt = activeRecord?.prompt || interpRecord?.prompt || null;
 
   const statusItems = [
     {
@@ -605,102 +634,52 @@ function App() {
 
         <div className="composer">
           <div className="mode-tabs" role="tablist" aria-label="Lab mode">
-            {(["lens", "patch", "chat"] as LabMode[]).map((mode) => (
+            {(["chat", "lens", "patch"] as LabMode[]).map((mode) => (
               <button
                 key={mode}
                 type="button"
                 className="mode-tab"
                 data-active={labMode === mode}
+                data-ready={tabReady[mode]}
+                aria-selected={labMode === mode}
                 onClick={() => setLabMode(mode)}
               >
+                <span className="tab-dot" />
                 {mode === "chat" ? "Chat" : mode === "lens" ? "Lens" : "Patch"}
               </button>
             ))}
           </div>
+          <div className="tab-help">
+            <span>Ask once, then switch tabs to review the same private run.</span>
+            {lastRunPrompt && <strong>Last run: {lastRunPrompt}</strong>}
+          </div>
 
           <label className="composer-label" htmlFor="chat-prompt">
-            {labMode === "chat" ? "Message to" : "Clean prompt for"} {privateModelName}
+            Message to {privateModelName}
           </label>
           <div className="composer-row">
             <textarea
               id="chat-prompt"
               className="chat-input"
-              placeholder={
-                labMode === "chat"
-                  ? `Ask ${modelName} something…`
-                  : "Type a short prompt to inspect the model's next-token behavior…"
-              }
+              placeholder={`Ask ${modelName} something. The run will fill Chat, Lens, and Patch.`}
               value={prompt}
+              maxLength={1200}
               spellCheck={false}
-              onChange={(event) => setPrompt(event.target.value)}
+              onChange={(event) => updatePrompt(event.target.value)}
               onKeyDown={handleComposerKeyDown}
             />
             <button
               className="send-btn"
               type="button"
               onClick={send}
-              disabled={
-                !!busy ||
-                prompt.trim().length < 1 ||
-                (labMode === "patch" && corruptedPrompt.trim().length < 1)
-              }
+              disabled={!!busy || prompt.trim().length < 1}
             >
-              {running || interpreting ? <Loader2 className="spin" /> : <Send />}
+              {runningAll ? <Loader2 className="spin" /> : <Send />}
               <span>{actionLabel}</span>
             </button>
           </div>
 
-          {labMode !== "chat" && (
-            <div className="interp-input-grid">
-              <label>
-                <span>Target token</span>
-                <input
-                  value={targetToken}
-                  onChange={(event) => setTargetToken(event.target.value)}
-                  placeholder="Optional; defaults to final prediction"
-                />
-              </label>
-              <label>
-                <span>Top-k tokens</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={5}
-                  value={interpTopK}
-                  onChange={(event) =>
-                    setInterpTopK(Math.max(1, Math.min(5, Number(event.target.value) || 5)))
-                  }
-                />
-              </label>
-              <label>
-                <span>Prompt token limit</span>
-                <input
-                  type="number"
-                  min={16}
-                  max={192}
-                  step={8}
-                  value={interpMaxPromptTokens}
-                  onChange={(event) =>
-                    setInterpMaxPromptTokens(
-                      Math.max(16, Math.min(192, Number(event.target.value) || 128))
-                    )
-                  }
-                />
-              </label>
-              {labMode === "patch" && (
-                <label>
-                  <span>Corrupted prompt</span>
-                  <textarea
-                    value={corruptedPrompt}
-                    onChange={(event) => setCorruptedPrompt(event.target.value)}
-                    placeholder="A contrast prompt for activation patching"
-                  />
-                </label>
-              )}
-            </div>
-          )}
-
-          {labMode === "chat" && (
+          <div className="composer-tools">
             <div className="sampling" data-open={samplingOpen}>
               <button
                 className="sampling-toggle"
@@ -740,7 +719,66 @@ function App() {
                 />
               </div>
             </div>
-          )}
+
+            <div className="sampling analysis-settings" data-open={analysisOpen}>
+              <button
+                className="sampling-toggle"
+                type="button"
+                onClick={() => setAnalysisOpen((value) => !value)}
+              >
+                <Cpu /> Analysis settings
+                <ChevronDown className="caret" />
+              </button>
+              <div className="analysis-body">
+                <label>
+                  <span>Target token</span>
+                  <input
+                    value={targetToken}
+                    onChange={(event) => setTargetToken(event.target.value)}
+                    placeholder="Optional; defaults to final prediction"
+                  />
+                </label>
+                <label>
+                  <span>Top-k tokens</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={5}
+                    value={interpTopK}
+                    onChange={(event) =>
+                      setInterpTopK(Math.max(1, Math.min(5, Number(event.target.value) || 5)))
+                    }
+                  />
+                </label>
+                <label>
+                  <span>Prompt token limit</span>
+                  <input
+                    type="number"
+                    min={16}
+                    max={192}
+                    step={8}
+                    value={interpMaxPromptTokens}
+                    onChange={(event) =>
+                      setInterpMaxPromptTokens(
+                        Math.max(16, Math.min(192, Number(event.target.value) || 128))
+                      )
+                    }
+                  />
+                </label>
+                <label className="contrast-field">
+                  <span>Patch contrast prompt</span>
+                  <textarea
+                    value={corruptedPrompt}
+                    onChange={(event) => updateCorruptedPrompt(event.target.value)}
+                    placeholder="A contrast prompt for activation patching"
+                  />
+                  <button className="mini-link" type="button" onClick={resetContrastPrompt}>
+                    Reset auto contrast
+                  </button>
+                </label>
+              </div>
+            </div>
+          </div>
         </div>
 
         {labMode !== "chat" && (
@@ -1034,8 +1072,8 @@ function InterpretabilityPanel({
               <Cpu />
             </div>
             <div className="empty-t">
-              Run {mode === "lens" ? "Lens" : "Patch"} to create signed, redacted
-              interpretability artifacts.
+              Ask the private model once to populate Chat, Lens, and Patch from the same
+              prompt.
             </div>
           </div>
         </>
@@ -1436,7 +1474,7 @@ function EmptyState() {
       <div className="empty-ic">
         <ShieldCheck />
       </div>
-      <div className="empty-t">No model run yet</div>
+      <div className="empty-t">Ask the private model to populate every tab.</div>
     </div>
   );
 }
@@ -1470,6 +1508,33 @@ async function fetchReceiptAudit(recordId: string): Promise<ReceiptAudit> {
     throw new Error(body.error || "Audit failed");
   }
   return body.audit as ReceiptAudit;
+}
+
+function makeContrastPrompt(value: string): string {
+  const clean = value.replace(/\s+/g, " ").trim();
+  if (!clean) return DEFAULT_PATCH_PROMPT;
+  if (clean === DEFAULT_INTERP_PROMPT) return DEFAULT_PATCH_PROMPT;
+
+  const swaps: Array<[RegExp, string]> = [
+    [/\bFrance\b/i, "Germany"],
+    [/\bParis\b/i, "Berlin"],
+    [/\bOpenAI\b/i, "a different lab"],
+    [/\bprivate\b/i, "public"],
+    [/\bSolana\b/i, "another chain"],
+    [/\bTEE\b/i, "ordinary server"]
+  ];
+  for (const [pattern, replacement] of swaps) {
+    if (pattern.test(clean)) {
+      return clean.replace(pattern, replacement).slice(0, 1200);
+    }
+  }
+
+  const words = clean.split(" ");
+  if (words.length >= 4) {
+    words[words.length - 1] = "unknown";
+    return words.join(" ").slice(0, 1200);
+  }
+  return `${clean} not`.slice(0, 1200);
 }
 
 function shortHash(value?: string, length = 12): string {
