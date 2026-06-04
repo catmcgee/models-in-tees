@@ -633,27 +633,10 @@ function App() {
         </p>
 
         <div className="composer">
-          <div className="mode-tabs" role="tablist" aria-label="Lab mode">
-            {(["chat", "lens", "patch"] as LabMode[]).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                className="mode-tab"
-                data-active={labMode === mode}
-                data-ready={tabReady[mode]}
-                aria-selected={labMode === mode}
-                onClick={() => setLabMode(mode)}
-              >
-                <span className="tab-dot" />
-                {mode === "chat" ? "Chat" : mode === "lens" ? "Lens" : "Patch"}
-              </button>
-            ))}
+          <div className="composer-note">
+            Ask once. The result tabs below will fill with Chat, Lens, and Patch views
+            from the same private run.
           </div>
-          <div className="tab-help">
-            <span>Ask once, then switch tabs to review the same private run.</span>
-            {lastRunPrompt && <strong>Last run: {lastRunPrompt}</strong>}
-          </div>
-
           <label className="composer-label" htmlFor="chat-prompt">
             Message to {privateModelName}
           </label>
@@ -780,16 +763,6 @@ function App() {
             </div>
           </div>
         </div>
-
-        {labMode !== "chat" && (
-          <InterpretabilityPanel
-            mode={labMode}
-            record={interpRecord}
-            verification={interpVerification}
-            busy={interpreting}
-            modelName={modelName}
-          />
-        )}
       </section>
 
       {error && (
@@ -806,101 +779,133 @@ function App() {
         ))}
       </section>
 
-      {/* chat output + proof */}
-      {labMode === "chat" && (
-      <section className="lower-grid">
-        <div className="panel">
-          <div className="panel-head">
-            <div>
-              <span className="eyebrow">Model output</span>
-              <div className="panel-title">Generated text</div>
-            </div>
-            {activeRecord && (
-              <span className="pill-count">
-                {activeRecord.generation.tokenCount.generated} tokens ·{" "}
-                {formatMs(activeRecord.generation.latencyMs)}
-              </span>
-            )}
+      <section className="result-workbench">
+        <div className="result-tabbar">
+          <div className="mode-tabs" role="tablist" aria-label="Result view">
+            {(["chat", "lens", "patch"] as LabMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className="mode-tab"
+                data-active={labMode === mode}
+                data-ready={tabReady[mode]}
+                aria-selected={labMode === mode}
+                onClick={() => setLabMode(mode)}
+              >
+                <span className="tab-dot" />
+                {mode === "chat" ? "Chat" : mode === "lens" ? "Lens" : "Patch"}
+              </button>
+            ))}
           </div>
-          {running ? (
-            <div className="empty">
-              <span className="running-line">
-                <Loader2 className="spin" /> Generating inside {teeName}…
-              </span>
-            </div>
-          ) : activeRecord ? (
-            <div>
-              <div className="gen-prompt">▸ {activeRecord.prompt}</div>
-              <div className="gen-text">{activeRecord.generation.output}</div>
-            </div>
-          ) : (
-            <EmptyState />
-          )}
+          <div className="tab-help">
+            <span>Switch views after the prompt runs.</span>
+            {lastRunPrompt && <strong>Last run: {lastRunPrompt}</strong>}
+          </div>
         </div>
 
-        <div className="panel">
-          <div className="panel-head">
-            <div>
-              <span className="eyebrow">Proof</span>
-              <div className="panel-title">What the receipt says</div>
-            </div>
-            <VerificationBadge state={verification} />
-          </div>
-          {activeRecord ? (
-            <div>
-              <div className="kv">
-                <div className="kv-row">
-                  <div className="kv-k">Run ID</div>
-                  <div className="kv-v">{activeRecord.id}</div>
+        {labMode === "chat" ? (
+          <section className="lower-grid">
+            <div className="panel">
+              <div className="panel-head">
+                <div>
+                  <span className="eyebrow">Model output</span>
+                  <div className="panel-title">Generated text</div>
                 </div>
-                <div className="kv-row">
-                  <div className="kv-k">Issued</div>
-                  <div className="kv-v">{formatDate(activeRecord.createdAt)}</div>
-                </div>
-                <div className="kv-row">
-                  <div className="kv-k">Prompt hash</div>
-                  <div className="kv-v">{shortHash(activeRecord.generation.promptHash)}</div>
-                </div>
-                <div className="kv-row">
-                  <div className="kv-k">Output hash</div>
-                  <div className="kv-v">{shortHash(activeRecord.generation.outputHash)}</div>
-                </div>
-                <div className="kv-row">
-                  <div className="kv-k">Model commitment</div>
-                  <div className="kv-v">
-                    {shortHash(activeRecord.receipt.payload.model.commitment)}
-                  </div>
-                </div>
-              </div>
-              <div className="receipt-actions">
-                <label className="toggle" data-on={dryRunCommit}>
-                  <input
-                    type="checkbox"
-                    checked={dryRunCommit}
-                    onChange={(event) => setDryRunCommit(event.target.checked)}
-                  />
-                  <span className="track">
-                    <span className="knob" />
+                {activeRecord && (
+                  <span className="pill-count">
+                    {activeRecord.generation.tokenCount.generated} tokens ·{" "}
+                    {formatMs(activeRecord.generation.latencyMs)}
                   </span>
-                  Dry run
-                </label>
-                <button
-                  className="btn btn-dark"
-                  type="button"
-                  onClick={commitActiveReceipt}
-                  disabled={!!busy}
-                >
-                  <Anchor /> Anchor receipt
-                </button>
+                )}
               </div>
-              {chain && <ChainNotice record={activeRecord} />}
+              {running ? (
+                <div className="empty">
+                  <span className="running-line">
+                    <Loader2 className="spin" /> Generating inside {teeName}…
+                  </span>
+                </div>
+              ) : activeRecord ? (
+                <div>
+                  <div className="gen-prompt">▸ {activeRecord.prompt}</div>
+                  <div className="gen-text">{activeRecord.generation.output}</div>
+                </div>
+              ) : (
+                <EmptyState />
+              )}
             </div>
-          ) : (
-            <EmptyState />
-          )}
-        </div>
+
+            <div className="panel">
+              <div className="panel-head">
+                <div>
+                  <span className="eyebrow">Proof</span>
+                  <div className="panel-title">What the receipt says</div>
+                </div>
+                <VerificationBadge state={verification} />
+              </div>
+              {activeRecord ? (
+                <div>
+                  <div className="kv">
+                    <div className="kv-row">
+                      <div className="kv-k">Run ID</div>
+                      <div className="kv-v">{activeRecord.id}</div>
+                    </div>
+                    <div className="kv-row">
+                      <div className="kv-k">Issued</div>
+                      <div className="kv-v">{formatDate(activeRecord.createdAt)}</div>
+                    </div>
+                    <div className="kv-row">
+                      <div className="kv-k">Prompt hash</div>
+                      <div className="kv-v">{shortHash(activeRecord.generation.promptHash)}</div>
+                    </div>
+                    <div className="kv-row">
+                      <div className="kv-k">Output hash</div>
+                      <div className="kv-v">{shortHash(activeRecord.generation.outputHash)}</div>
+                    </div>
+                    <div className="kv-row">
+                      <div className="kv-k">Model commitment</div>
+                      <div className="kv-v">
+                        {shortHash(activeRecord.receipt.payload.model.commitment)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="receipt-actions">
+                    <label className="toggle" data-on={dryRunCommit}>
+                      <input
+                        type="checkbox"
+                        checked={dryRunCommit}
+                        onChange={(event) => setDryRunCommit(event.target.checked)}
+                      />
+                      <span className="track">
+                        <span className="knob" />
+                      </span>
+                      Dry run
+                    </label>
+                    <button
+                      className="btn btn-dark"
+                      type="button"
+                      onClick={commitActiveReceipt}
+                      disabled={!!busy}
+                    >
+                      <Anchor /> Anchor receipt
+                    </button>
+                  </div>
+                  {chain && <ChainNotice record={activeRecord} />}
+                </div>
+              ) : (
+                <EmptyState />
+              )}
+            </div>
+          </section>
+        ) : (
+          <InterpretabilityPanel
+            mode={labMode}
+            record={interpRecord}
+            verification={interpVerification}
+            busy={interpreting}
+            modelName={modelName}
+          />
+        )}
       </section>
-      )}
 
       {/* evidence drawer */}
       <section className="drawer" data-open={drawerOpen}>
