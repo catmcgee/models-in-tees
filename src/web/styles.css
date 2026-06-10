@@ -1127,13 +1127,17 @@ input[type="range"].rng::-moz-range-thumb {
 }
 
 .feature-row {
-  flex-wrap: wrap;
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
 }
 
 .feature-row .feature-label {
-  flex: 1 1 100%;
+  grid-column: 1 / -1;
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
-  padding-left: 2px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted);
+  margin: -2px 0 6px;
+  padding-left: 58px;
 }
