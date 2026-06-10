@@ -401,12 +401,12 @@ function SuiteResultView({
       <div className="suite-receipt">
         <div className="ev-col-title">What the signed receipt binds together</div>
         <div className="kv">
-          <Row k="Dataset hash" v={short(result.suite.datasetHash)} />
-          <Row k="Model commitment" v={short(record.receipt.payload.model.commitment)} />
-          <Row k="Result hash" v={short(result.resultHash)} />
-          <Row k="Leakage policy hash" v={short(record.receipt.payload.policyHash)} />
-          <Row k="TEE evidence hash" v={short(record.receipt.payload.runner.teeEvidenceHash)} />
-          <Row k="Receipt digest" v={short(record.receipt.digest)} />
+          <Row k="Dataset hash" v={result.suite.datasetHash} />
+          <Row k="Model commitment" v={record.receipt.payload.model.commitment} />
+          <Row k="Result hash" v={result.resultHash} />
+          <Row k="Leakage policy hash" v={record.receipt.payload.policyHash} />
+          <Row k="TEE evidence hash" v={record.receipt.payload.runner.teeEvidenceHash || "pending"} />
+          <Row k="Receipt digest" v={record.receipt.digest} />
         </div>
         {record.solanaCommitment && (
           <div className={`confirmed${record.solanaCommitment.status === "failed" ? " failed" : ""}`}>
@@ -423,7 +423,7 @@ function SuiteResultView({
                 )}
               </div>
               <div className="confirmed-h">
-                {record.solanaCommitment.error || short(record.solanaCommitment.memoHash)}
+                {record.solanaCommitment.error || record.solanaCommitment.memoHash}
               </div>
             </div>
           </div>
@@ -665,12 +665,6 @@ function describeApiError(error: unknown): string {
     return JSON.stringify(error);
   }
   return String(error || "");
-}
-
-function short(value?: string, length = 10): string {
-  if (!value) return "pending";
-  if (value.length <= length * 2) return value;
-  return `${value.slice(0, length)}…${value.slice(-length)}`;
 }
 
 function pct(value: unknown): string {
