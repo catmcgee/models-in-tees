@@ -14,10 +14,12 @@ import {
   SlidersHorizontal,
   XCircle
 } from "lucide-react";
+import { AuditorLab } from "./AuditorLab";
 import "./styles.css";
 
 type VerificationState = "unchecked" | "checking" | "valid" | "invalid";
 type LabMode = "chat" | "lens" | "patch";
+type LabView = "single" | "auditor";
 
 interface ModelInfo {
   commitment: string;
@@ -265,6 +267,7 @@ const DEFAULT_PATCH_PROMPT = "The capital of Germany is";
 
 function App() {
   const [prompt, setPrompt] = React.useState(DEFAULT_INTERP_PROMPT);
+  const [labView, setLabView] = React.useState<LabView>("single");
   const [labMode, setLabMode] = React.useState<LabMode>("chat");
   const [corruptedPrompt, setCorruptedPrompt] = React.useState(DEFAULT_PATCH_PROMPT);
   const [contrastEdited, setContrastEdited] = React.useState(false);
@@ -272,7 +275,7 @@ function App() {
   const [maxNewTokens, setMaxNewTokens] = React.useState(80);
   const [temperature, setTemperature] = React.useState(0.75);
   const [topP, setTopP] = React.useState(0.92);
-  const [interpTopK, setInterpTopK] = React.useState(5);
+  const [interpTopK, setInterpTopK] = React.useState(3);
   const [interpMaxPromptTokens, setInterpMaxPromptTokens] = React.useState(128);
   const [model, setModel] = React.useState<ModelInfo | null>(null);
   const [records, setRecords] = React.useState<GenerationRecord[]>([]);
@@ -561,14 +564,38 @@ function App() {
             <div className="brand-sub">{proofSurface}</div>
           </div>
         </div>
-        <button className="btn-ghost" type="button" onClick={refresh} disabled={!!busy}>
-          {busy ? <Loader2 className="spin" /> : <RefreshCcw />}
-          <span>{busy || "Refresh"}</span>
-        </button>
+        <div className="topbar-actions">
+          <div className="mode-tabs view-switch" role="tablist" aria-label="Lab view">
+            <button
+              type="button"
+              className="mode-tab"
+              data-active={labView === "single"}
+              onClick={() => setLabView("single")}
+            >
+              <span className="tab-dot" />
+              Single run
+            </button>
+            <button
+              type="button"
+              className="mode-tab"
+              data-active={labView === "auditor"}
+              onClick={() => setLabView("auditor")}
+            >
+              <span className="tab-dot" />
+              Auditor lab
+            </button>
+          </div>
+          <button className="btn-ghost" type="button" onClick={refresh} disabled={!!busy}>
+            {busy ? <Loader2 className="spin" /> : <RefreshCcw />}
+            <span>{busy || "Refresh"}</span>
+          </button>
+        </div>
       </header>
 
+      {labView === "auditor" && <AuditorLab />}
+
       {/* hero / composer */}
-      <section className="panel hero-wide">
+      <section className="panel hero-wide" style={labView === "auditor" ? { display: "none" } : undefined}>
         <span className="eyebrow">Private interpretability demo</span>
         <h1 className="headline">
           Probe {modelName} without seeing its <span className="accentword">weights.</span>
@@ -670,14 +697,14 @@ function App() {
                   />
                 </label>
                 <label>
-                  <span>Top-k tokens</span>
+                  <span>Top-k tokens (policy max 3)</span>
                   <input
                     type="number"
                     min={1}
-                    max={5}
+                    max={3}
                     value={interpTopK}
                     onChange={(event) =>
-                      setInterpTopK(Math.max(1, Math.min(5, Number(event.target.value) || 5)))
+                      setInterpTopK(Math.max(1, Math.min(3, Number(event.target.value) || 3)))
                     }
                   />
                 </label>
@@ -720,7 +747,10 @@ function App() {
         </div>
       )}
 
-      <section className="result-workbench">
+      <section
+        className="result-workbench"
+        style={labView === "auditor" ? { display: "none" } : undefined}
+      >
         <div className="result-tabbar">
           <div className="mode-tabs" role="tablist" aria-label="Result view">
             {(["chat", "lens", "patch"] as LabMode[]).map((mode) => (

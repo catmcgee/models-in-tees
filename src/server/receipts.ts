@@ -19,6 +19,10 @@ import type {
   SignedPayload,
   SignedPayloadPayload,
   SignedReceipt,
+  SignedSuiteReceipt,
+  SuiteExperiment,
+  SuiteReceiptPayload,
+  SuiteResult,
   TeeEvidence
 } from "./types.js";
 
@@ -94,6 +98,45 @@ export function createSignedInterpretabilityReceipt(
       kind: "logit-lens-and-activation-patching",
       params: result.params,
       redaction: result.redaction
+    },
+    runner: {
+      teeMode: config.teeMode,
+      teeProvider: config.teeProvider,
+      publicKeyPem: keypair.publicKeyPem,
+      publicKeyFingerprint,
+      ...(teeEvidence
+        ? {
+            teeEvidenceHash: teeEvidence.evidenceHash,
+            teeEvidence: summarizeTeeEvidence(teeEvidence)
+          }
+        : {})
+    }
+  };
+  return signReceiptPayload(payload, keypair.privateKeyPem);
+}
+
+export function createSignedSuiteReceipt(
+  runId: string,
+  experiment: SuiteExperiment,
+  result: SuiteResult,
+  teeEvidence?: TeeEvidence
+): SignedSuiteReceipt {
+  const keypair = loadOrCreateAttestationKeys();
+  const publicKeyFingerprint = sha256Hex(keypair.publicKeyPem).slice(0, 32);
+  const payload: SuiteReceiptPayload = {
+    schema: "private-gpt2-suite-receipt/v1",
+    runId,
+    issuedAt: new Date().toISOString(),
+    experiment,
+    suite: result.suite,
+    resultHash: result.resultHash,
+    // The leakage policy enforced inside the runner is hashed into the signed
+    // receipt, so an auditor can prove which detail caps governed this run.
+    policyHash: sha256Hex(canonicalJson(result.policy)),
+    model: {
+      commitment: result.model.commitment,
+      architecture: result.model.architecture,
+      weightsPublic: false
     },
     runner: {
       teeMode: config.teeMode,

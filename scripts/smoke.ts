@@ -104,11 +104,79 @@ try {
     throw new Error("Interpretability dry-run Solana commitment did not return dry-run status");
   }
 
+  // Auditor suite endpoints: aggregate-only results with suite receipts.
+  const auditSuite = await postJson(`${baseUrl}/api/audit-suite`, {
+    suite: {
+      name: "smoke capital facts",
+      kind: "expected-token",
+      items: [
+        { prompt: "The capital of France is", expectedToken: " Paris" },
+        { prompt: "The capital of Germany is", expectedToken: " Berlin" },
+        { prompt: "The capital of Italy is", expectedToken: " Rome" },
+        { prompt: "The capital of Spain is", expectedToken: " Madrid" },
+        { prompt: "The capital of Japan is", expectedToken: " Tokyo" },
+        { prompt: "The capital of Russia is", expectedToken: " Moscow" },
+        { prompt: "The capital of England is", expectedToken: " London" },
+        { prompt: "The capital of Egypt is", expectedToken: " Cairo" }
+      ]
+    }
+  });
+  const suiteRecord = auditSuite.record;
+  if (!suiteRecord?.result?.suite?.datasetHash || !suiteRecord?.receipt?.payload?.policyHash) {
+    throw new Error("Audit suite did not bind a dataset hash and leakage policy hash");
+  }
+  if (suiteRecord.result.metrics?.scored !== 8) {
+    throw new Error("Audit suite did not score all items");
+  }
+  assertNoForbiddenKeys(suiteRecord.result, [
+    "hiddenStates",
+    "rawHiddenStates",
+    "attentionTensor",
+    "perItemResults",
+    "stateDict",
+    "parameters",
+    "gradients"
+  ]);
+  const suiteVerification = await postJson(`${baseUrl}/api/verify`, {
+    receipt: suiteRecord.receipt
+  });
+  if (!suiteVerification.verification?.ok) {
+    throw new Error(`Suite receipt verification failed: ${JSON.stringify(suiteVerification)}`);
+  }
+  const suiteAudit = await expectOk(`${baseUrl}/api/receipts/${suiteRecord.id}/audit`);
+  if (!suiteAudit.audit?.ok) {
+    throw new Error(`Suite receipt audit failed: ${JSON.stringify(suiteAudit)}`);
+  }
+  const suiteDryRun = await postJson(
+    `${baseUrl}/api/receipts/${suiteRecord.id}/commit?dryRun=1`,
+    {}
+  );
+  if (suiteDryRun.solanaCommitment?.status !== "dry-run") {
+    throw new Error("Suite dry-run Solana commitment did not return dry-run status");
+  }
+
+  const patchSuite = await postJson(`${baseUrl}/api/patch-suite`, {
+    name: "smoke patch suite",
+    pairs: [
+      { cleanPrompt: "The capital of France is", corruptedPrompt: "The capital of Germany is", targetToken: " Paris" },
+      { cleanPrompt: "The capital of Italy is", corruptedPrompt: "The capital of Spain is", targetToken: " Rome" },
+      { cleanPrompt: "The capital of Japan is", corruptedPrompt: "The capital of China is", targetToken: " Tokyo" }
+    ]
+  });
+  if (!patchSuite.record?.result?.metrics?.bestLayer) {
+    throw new Error("Patch suite did not return aggregate layer scores");
+  }
+
   console.log(
     JSON.stringify(
       {
         ok: true,
         runId: record.id,
+        suiteRunId: suiteRecord.id,
+        suiteReceiptDigest: suiteRecord.receipt.digest,
+        suiteDatasetHash: suiteRecord.result.suite.datasetHash,
+        suitePolicyHash: suiteRecord.receipt.payload.policyHash,
+        patchSuiteBestLayer: patchSuite.record.result.metrics.bestLayer,
         receiptDigest: record.receipt.digest,
         teeEvidenceHash: record.receipt.payload.runner.teeEvidenceHash,
         workloadHash: audit.audit.workloadHash,

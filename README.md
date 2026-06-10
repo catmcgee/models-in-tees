@@ -18,6 +18,8 @@ Google Confidential VM.
 - Model runner: GPT-2 causal language model
 - Interpretability lab: logit-lens summaries, attention aggregates, and
   layer-level activation patching scores
+- Auditor lab: behavior eval suites, linear probes, activation-patch suites,
+  and SAE feature reports over committed datasets, aggregate-only
 - Receipt protocol: canonical JSON + Ed25519 signatures
 - TEE evidence: Google Confidential VM attestation token when available
 - Chain commit: Solana devnet Anchor program, with Memo fallback
@@ -101,6 +103,10 @@ GET  /api/llm
 GET  /api/tee/evidence
 POST /api/generate
 POST /api/interpret
+POST /api/audit-suite
+POST /api/probe
+POST /api/patch-suite
+POST /api/features
 POST /api/verify
 POST /api/audit
 GET  /api/solana/status
@@ -131,6 +137,27 @@ The endpoint does not return model weights, raw hidden-state vectors, raw
 attention tensors, MLP activations, projection matrices, or gradients. The
 receipt signs a hash of the redacted result so users can discuss and reproduce
 the public artifact without receiving the private internals.
+
+## Auditor Lab
+
+The Auditor lab view runs suite experiments against the private model and
+returns aggregate-only results under a capped-detail leakage policy
+(coarsened numbers, top-k capped at 3, no per-item results, minimum suite
+sizes). Each suite receipt binds dataset hash + model commitment + result
+hash + leakage policy hash + TEE evidence hash, supporting the claim "model X
+scored Y on committed dataset Z under policy P" without exposing weights.
+
+- `POST /api/audit-suite`: expected-token accuracy, memorization checks, or
+  paired-bias gaps over 8-64 items.
+- `POST /api/probe`: trains a linear probe per layer on 24-200 labeled texts
+  inside the runner; returns held-out accuracies only.
+- `POST /api/patch-suite`: activation patching over 3-12 clean/corrupted
+  pairs; returns mean and spread of recovery per layer.
+- `POST /api/features`: sparse-autoencoder feature firing rates over up to 16
+  prompts. Train the demo dictionary once with `npm run train:sae` (artifacts
+  land in `private/sae/`).
+
+See `docs/TRUST_MODEL.md` for the leakage policy rationale.
 
 ## Solana Devnet
 

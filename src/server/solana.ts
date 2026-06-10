@@ -16,6 +16,7 @@ import type {
   SignedInterpretabilityReceipt,
   SignedPayload,
   SignedReceipt,
+  SignedSuiteReceipt,
   SolanaCommitment
 } from "./types.js";
 
@@ -140,6 +141,10 @@ function isInterpretabilityReceipt(
   return receipt.payload.schema === "private-gpt2-interpretability-receipt/v1";
 }
 
+function isSuiteReceipt(receipt: SignedPayload): receipt is SignedSuiteReceipt {
+  return receipt.payload.schema === "private-gpt2-suite-receipt/v1";
+}
+
 function buildMemoRecord(receipt: SignedPayload): Record<string, unknown> {
   if (isGenerationReceipt(receipt)) {
     return {
@@ -150,6 +155,23 @@ function buildMemoRecord(receipt: SignedPayload): Record<string, unknown> {
       promptHash: receipt.payload.promptHash,
       outputHash: receipt.payload.outputHash,
       paramsHash: receipt.payload.paramsHash,
+      teeEvidenceHash: receipt.payload.runner.teeEvidenceHash || null,
+      issuedAt: receipt.payload.issuedAt
+    };
+  }
+
+  if (isSuiteReceipt(receipt)) {
+    return {
+      schema: "tee-ai-devnet-suite-memo/v1",
+      receiptSchema: receipt.payload.schema,
+      receiptDigest: receipt.digest,
+      modelCommitment: receipt.payload.model.commitment,
+      experiment: receipt.payload.experiment,
+      suiteKind: receipt.payload.suite.kind,
+      datasetHash: receipt.payload.suite.datasetHash,
+      itemCount: receipt.payload.suite.itemCount,
+      resultHash: receipt.payload.resultHash,
+      policyHash: receipt.payload.policyHash,
       teeEvidenceHash: receipt.payload.runner.teeEvidenceHash || null,
       issuedAt: receipt.payload.issuedAt
     };

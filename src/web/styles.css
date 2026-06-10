@@ -971,3 +971,157 @@ input[type="range"].rng::-moz-range-thumb {
 /* ---------- motion ---------- */
 .spin { animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   Auditor lab
+   ============================================================ */
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.view-switch {
+  margin: 0;
+}
+
+.auditor-lab {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.auditor-tabs {
+  margin: 0;
+}
+
+.auditor-intro {
+  margin: 0;
+  max-width: 70ch;
+  color: var(--ink-soft);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.suite-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+  padding: 14px;
+}
+
+.suite-editor-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.load-row {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.suite-textarea {
+  width: 100%;
+  min-height: 220px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.suite-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.suite-result {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--surface);
+  border-radius: var(--r-md);
+  padding: 16px;
+  box-shadow: var(--sh-sm);
+}
+
+.metric-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.metric-tile {
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+}
+
+.metric-k {
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.metric-v {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  color: var(--ink);
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.metric-note {
+  margin: 6px 0 0;
+  max-width: 75ch;
+  color: var(--ink-soft);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.baseline-mark {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--block);
+  border-radius: 1px;
+}
+
+.patch-track {
+  position: relative;
+}
+
+.feature-row .feature-label {
+  flex: 1 1 220px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.suite-receipt {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--hair-soft);
+  padding-top: 14px;
+}
+
+.policy-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

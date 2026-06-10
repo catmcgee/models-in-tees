@@ -245,7 +245,46 @@ export interface InterpretabilityReceiptPayload {
   runner: ReceiptPayload["runner"];
 }
 
-export type SignedPayloadPayload = ReceiptPayload | InterpretabilityReceiptPayload;
+export type SuiteExperiment = "audit-suite" | "probe" | "patch-suite" | "sae-features";
+
+export interface SuiteResult {
+  ok: true;
+  available?: boolean;
+  hint?: string;
+  model: ModelInfo;
+  suite: {
+    kind: string;
+    name: string;
+    itemCount: number;
+    datasetHash: string;
+  };
+  metrics: Record<string, unknown>;
+  policy: Record<string, unknown>;
+  params: Record<string, unknown>;
+  latencyMs: number;
+  resultHash: string;
+}
+
+export interface SuiteReceiptPayload {
+  schema: "private-gpt2-suite-receipt/v1";
+  runId: string;
+  issuedAt: string;
+  experiment: SuiteExperiment;
+  suite: SuiteResult["suite"];
+  resultHash: string;
+  policyHash: string;
+  model: {
+    commitment: string;
+    architecture: Record<string, unknown>;
+    weightsPublic: false;
+  };
+  runner: ReceiptPayload["runner"];
+}
+
+export type SignedPayloadPayload =
+  | ReceiptPayload
+  | InterpretabilityReceiptPayload
+  | SuiteReceiptPayload;
 
 export interface SignedPayload<TPayload extends SignedPayloadPayload = SignedPayloadPayload> {
   payload: TPayload;
@@ -256,6 +295,7 @@ export interface SignedPayload<TPayload extends SignedPayloadPayload = SignedPay
 
 export type SignedReceipt = SignedPayload<ReceiptPayload>;
 export type SignedInterpretabilityReceipt = SignedPayload<InterpretabilityReceiptPayload>;
+export type SignedSuiteReceipt = SignedPayload<SuiteReceiptPayload>;
 
 export interface GenerationRecord {
   kind: "generation";
@@ -281,7 +321,18 @@ export interface InterpretabilityRecord {
   createdAt: string;
 }
 
-export type StoredRecord = GenerationRecord | InterpretabilityRecord;
+export interface SuiteRecord {
+  kind: "suite";
+  id: string;
+  experiment: SuiteExperiment;
+  result: SuiteResult;
+  receipt: SignedSuiteReceipt;
+  teeEvidence?: TeeEvidence | null;
+  solanaCommitment?: SolanaCommitment | null;
+  createdAt: string;
+}
+
+export type StoredRecord = GenerationRecord | InterpretabilityRecord | SuiteRecord;
 
 export interface AuditCheck {
   name: string;

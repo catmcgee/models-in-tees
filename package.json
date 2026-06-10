@@ -13,6 +13,7 @@
     "build:frontend": "vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json",
     "llm:test": ".venv/bin/python src/model/model_runner.py selftest",
+    "train:sae": ".venv/bin/python scripts/train_sae.py",
     "api:test": "tsx scripts/smoke.ts",
     "audit:public": "tsx scripts/publicAudit.ts",
     "chain:test": "tsx scripts/devnetCommit.ts",

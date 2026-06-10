@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { config, hfDir, llmDir, rootDir } from "./config.js";
-import type { GenerationResult, InterpretabilityResult, ModelInfo } from "./types.js";
+import type { GenerationResult, InterpretabilityResult, ModelInfo, SuiteResult } from "./types.js";
 
 const venvPython = path.join(rootDir, ".venv", "bin", "python");
 const pythonBinary = fs.existsSync(venvPython) ? venvPython : "python3";
@@ -44,8 +44,48 @@ export async function runInterpretability(payload: {
   return result as InterpretabilityResult;
 }
 
+export async function runAuditSuite(payload: Record<string, unknown>): Promise<SuiteResult> {
+  const result = await runPython("audit-suite", payload);
+  if (!result.ok) {
+    throw new Error(result.error || "Audit suite failed");
+  }
+  return result as SuiteResult;
+}
+
+export async function runProbe(payload: Record<string, unknown>): Promise<SuiteResult> {
+  const result = await runPython("probe", payload);
+  if (!result.ok) {
+    throw new Error(result.error || "Linear probe failed");
+  }
+  return result as SuiteResult;
+}
+
+export async function runPatchSuite(payload: Record<string, unknown>): Promise<SuiteResult> {
+  const result = await runPython("patch-suite", payload);
+  if (!result.ok) {
+    throw new Error(result.error || "Patch suite failed");
+  }
+  return result as SuiteResult;
+}
+
+export async function runSaeFeatures(payload: Record<string, unknown>): Promise<SuiteResult> {
+  const result = await runPython("sae-features", payload);
+  if (!result.ok) {
+    throw new Error(result.error || "SAE feature report failed");
+  }
+  return result as SuiteResult;
+}
+
 async function runPython(
-  command: "llm-info" | "generate" | "interpret" | "selftest",
+  command:
+    | "llm-info"
+    | "generate"
+    | "interpret"
+    | "audit-suite"
+    | "probe"
+    | "patch-suite"
+    | "sae-features"
+    | "selftest",
   payload: Record<string, unknown>
 ): Promise<any> {
   return new Promise((resolve, reject) => {

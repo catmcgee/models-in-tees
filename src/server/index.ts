@@ -9,8 +9,15 @@ import { auditReceiptEvidence } from "./audit.js";
 import { config, rootDir } from "./config.js";
 import { generateText, getLlmInfo, runInterpretability } from "./modelRunner.js";
 import {
+  runAuditSuite,
+  runPatchSuite,
+  runProbe,
+  runSaeFeatures
+} from "./modelRunner.js";
+import {
   createSignedGenerationReceipt,
   createSignedInterpretabilityReceipt,
+  createSignedSuiteReceipt,
   verifySignedReceipt
 } from "./receipts.js";
 import { commitReceiptToDevnet, getSolanaStatus } from "./solana.js";
@@ -34,8 +41,51 @@ const interpretSchema = z.object({
   prompt: z.string().min(1).max(1200),
   corruptedPrompt: z.string().max(1200).optional(),
   targetToken: z.string().max(80).optional(),
-  topK: z.number().int().min(1).max(5).default(5),
+  topK: z.number().int().min(1).max(3).default(3),
   maxPromptTokens: z.number().int().min(16).max(192).default(128)
+});
+
+const auditSuiteSchema = z.object({
+  suite: z.object({
+    name: z.string().max(120).optional(),
+    kind: z.enum(["expected-token", "memorization", "paired-bias"]),
+    items: z.array(z.record(z.string(), z.unknown())).min(8).max(64)
+  })
+});
+
+const probeSchema = z.object({
+  name: z.string().max(120).optional(),
+  items: z
+    .array(
+      z.object({
+        text: z.string().min(1).max(400),
+        label: z.union([z.literal(0), z.literal(1)])
+      })
+    )
+    .min(24)
+    .max(200),
+  testFraction: z.number().min(0.15).max(0.4).optional(),
+  seed: z.number().int().optional()
+});
+
+const patchSuiteSchema = z.object({
+  name: z.string().max(120).optional(),
+  pairs: z
+    .array(
+      z.object({
+        cleanPrompt: z.string().min(1).max(1200),
+        corruptedPrompt: z.string().min(1).max(1200),
+        targetToken: z.string().max(80).optional()
+      })
+    )
+    .min(3)
+    .max(12),
+  maxPromptTokens: z.number().int().min(16).max(192).optional()
+});
+
+const saeFeaturesSchema = z.object({
+  name: z.string().max(120).optional(),
+  prompts: z.array(z.string().min(1).max(1200)).min(1).max(16)
 });
 
 export function createApp(): express.Express {
@@ -119,6 +169,42 @@ export function createApp(): express.Express {
       sendError(res, error);
     }
   });
+
+  const suiteEndpoints = [
+    { path: "/api/audit-suite", experiment: "audit-suite" as const, schema: auditSuiteSchema, run: runAuditSuite },
+    { path: "/api/probe", experiment: "probe" as const, schema: probeSchema, run: runProbe },
+    { path: "/api/patch-suite", experiment: "patch-suite" as const, schema: patchSuiteSchema, run: runPatchSuite },
+    { path: "/api/features", experiment: "sae-features" as const, schema: saeFeaturesSchema, run: runSaeFeatures }
+  ];
+
+  for (const endpoint of suiteEndpoints) {
+    app.post(endpoint.path, async (req, res) => {
+      try {
+        const parsed = endpoint.schema.parse(req.body);
+        const result = await endpoint.run(parsed as Record<string, unknown>);
+        if (result.available === false) {
+          res.json({ ok: true, available: false, hint: result.hint });
+          return;
+        }
+        const id = `suite-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        const teeEvidence = await getTeeEvidence({ includeToken: true });
+        const receipt = createSignedSuiteReceipt(id, endpoint.experiment, result, teeEvidence);
+        const record = saveRecord({
+          kind: "suite",
+          id,
+          experiment: endpoint.experiment,
+          result,
+          receipt,
+          teeEvidence,
+          solanaCommitment: null,
+          createdAt: new Date().toISOString()
+        });
+        res.json({ ok: true, record: publicRecord(record) });
+      } catch (error) {
+        sendError(res, error);
+      }
+    });
+  }
 
   app.get("/api/tee/evidence", async (req, res) => {
     try {
