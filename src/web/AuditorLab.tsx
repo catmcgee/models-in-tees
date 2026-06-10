@@ -556,7 +556,11 @@ function FeatureMetrics({ metrics }: { metrics: Record<string, any> }) {
               <div className="patch-fill" style={{ width: `${Math.round(feature.firingRate * 100)}%` }} />
             </div>
             <strong>{pct(feature.firingRate)}</strong>
-            <em className="feature-label">{feature.label}</em>
+            <em className="feature-label">
+              {feature.label === "unlabeled"
+                ? "unlabeled (not in the training corpus's top features)"
+                : feature.label}
+            </em>
           </div>
         ))}
       </div>

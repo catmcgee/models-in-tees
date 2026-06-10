@@ -1125,3 +1125,15 @@ input[type="range"].rng::-moz-range-thumb {
   flex-direction: column;
   gap: 8px;
 }
+
+.feature-row {
+  flex-wrap: wrap;
+}
+
+.feature-row .feature-label {
+  flex: 1 1 100%;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  padding-left: 2px;
+}
