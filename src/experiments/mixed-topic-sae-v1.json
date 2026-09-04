@@ -1,0 +1,44 @@
+{
+  "schema": "tee-ai-experiment/v1",
+  "id": "mixed-topic-sae-v1",
+  "kind": "sae-features",
+  "title": "Gemma Scope feature scan",
+  "description": "Runs eight mixed-topic prompts through the layer-13 Gemma Scope 2 residual SAE (16k features) and reports which dictionary features fire most, with coarse activations.",
+  "params": {
+    "maxPromptTokens": 48,
+    "excludeBos": true,
+    "sae": {
+      "repoId": "google/gemma-scope-2-1b-pt",
+      "subfolder": "resid_post/layer_13_width_16k_l0_medium",
+      "layer": 13,
+      "hiddenStateIndex": 14,
+      "width": 16384
+    }
+  },
+  "items": [
+    {
+      "prompt": "The capital of France is Paris."
+    },
+    {
+      "prompt": "I loved the wonderful movie and the amazing soundtrack."
+    },
+    {
+      "prompt": "The food was awful and the service was terrible."
+    },
+    {
+      "prompt": "def add(a, b): return a + b"
+    },
+    {
+      "prompt": "Four score and seven years ago our fathers brought forth a new nation."
+    },
+    {
+      "prompt": "The doctor examined the patient and wrote a prescription."
+    },
+    {
+      "prompt": "The stock market fell sharply after the announcement."
+    },
+    {
+      "prompt": "Electrons orbit the nucleus of an atom."
+    }
+  ]
+}

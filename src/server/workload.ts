@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { config, rootDir } from "./config.js";
-import { sha256Hex } from "./canonical.js";
+import { sha256HexSync } from "./canonical.js";
 import type { WorkloadMeasurement } from "./types.js";
 
 const rootFiles = [
@@ -14,14 +14,18 @@ const rootFiles = [
 
 const measuredDirs = [
   "src/server",
+  "src/shared",
+  "src/experiments",
   "src/model",
   "src/web",
-  "programs/private_gpt_receipts/src",
+  "programs/experiment_receipts/src",
   "dist-server/src/server",
+  "dist-server/src/shared",
   "dist/assets"
 ];
 
-const excludedExtensions = new Set([".map"]);
+const excludedExtensions = new Set([".map", ".pyc", ".pyo"]);
+const excludedDirs = new Set(["__pycache__", ".pytest_cache", "node_modules"]);
 
 export async function getWorkloadMeasurement(): Promise<WorkloadMeasurement> {
   const files = await collectMeasuredFiles();
@@ -29,9 +33,11 @@ export async function getWorkloadMeasurement(): Promise<WorkloadMeasurement> {
     schema: "tee-ai-workload/v1" as const,
     files,
     config: {
-      programId: config.privateReceiptProgramId,
+      programId: config.experimentProgramId,
       solanaRpcUrl: config.solanaRpcUrl,
       llmModelId: config.llmModelId,
+      saeRepo: config.saeRepo,
+      saeSubfolder: config.saeSubfolder,
       teeMode: config.teeMode,
       teeProvider: config.teeProvider,
       node: process.version,
@@ -43,7 +49,7 @@ export async function getWorkloadMeasurement(): Promise<WorkloadMeasurement> {
   return {
     ...measured,
     generatedAt: new Date().toISOString(),
-    workloadHash: sha256Hex(measured)
+    workloadHash: sha256HexSync(measured)
   };
 }
 
@@ -63,21 +69,15 @@ async function collectMeasuredFiles(): Promise<WorkloadMeasurement["files"]> {
     }
   }
 
-  const files = await Promise.all(
+  return Promise.all(
     [...paths]
       .filter((file) => !excludedExtensions.has(path.extname(file)))
       .sort()
       .map(async (file) => {
-        const absolute = path.join(rootDir, file);
-        const data = await fs.readFile(absolute);
-        return {
-          path: file,
-          sizeBytes: data.length,
-          sha256: sha256Hex(data)
-        };
+        const data = await fs.readFile(path.join(rootDir, file));
+        return { path: file, sizeBytes: data.length, sha256: sha256HexSync(data) };
       })
   );
-  return files;
 }
 
 async function walk(dir: string): Promise<string[]> {
@@ -86,12 +86,9 @@ async function walk(dir: string): Promise<string[]> {
     entries.map(async (entry) => {
       const absolute = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        return await walk(absolute);
+        return excludedDirs.has(entry.name) ? [] : await walk(absolute);
       }
-      if (entry.isFile()) {
-        return [absolute];
-      }
-      return [];
+      return entry.isFile() ? [absolute] : [];
     })
   );
   return nested.flat();

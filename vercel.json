@@ -15,5 +15,10 @@
       "src": "^/(.*)$",
       "dest": "/index.html"
     }
-  ]
+  ],
+  "functions": {
+    "api/[...path].ts": {
+      "maxDuration": 300
+    }
+  }
 }

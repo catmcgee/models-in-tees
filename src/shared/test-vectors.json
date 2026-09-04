@@ -1,0 +1,487 @@
+{
+  "schema": "tee-ai-test-vectors/v1",
+  "canonical": [
+    {
+      "name": "nested-unicode",
+      "value": {
+        "b": 1,
+        "a": [
+          true,
+          null,
+          "é\n\"x\""
+        ],
+        "Z": {
+          "y": -2,
+          "x": "日本"
+        },
+        "_": 0
+      },
+      "canonical": "{\"Z\":{\"x\":\"日本\",\"y\":-2},\"_\":0,\"a\":[true,null,\"é\\n\\\"x\\\"\"],\"b\":1}",
+      "sha256": "efbd7413d4415d1010f8dd4ff0c6f7e27a8ccfe89b66d91f10c52809e07ad11b"
+    },
+    {
+      "name": "integer-like-keys",
+      "value": {
+        "10": "ten",
+        "2": "two",
+        "1": "one",
+        "a": "letter",
+        "": "empty"
+      },
+      "canonical": "{\"\":\"empty\",\"1\":\"one\",\"10\":\"ten\",\"2\":\"two\",\"a\":\"letter\"}",
+      "sha256": "53cff96b760f7f834b45a6a040059072b7f2596ad031f08f93fcf57b13a16dfe"
+    },
+    {
+      "name": "empty-containers",
+      "value": {
+        "arr": [],
+        "obj": {},
+        "s": "",
+        "n": 0,
+        "neg": -1,
+        "big": 9007199254740991,
+        "nbig": -9007199254740991
+      },
+      "canonical": "{\"arr\":[],\"big\":9007199254740991,\"n\":0,\"nbig\":-9007199254740991,\"neg\":-1,\"obj\":{},\"s\":\"\"}",
+      "sha256": "de65aed5fbc648d2edf208775978fa7e63def35a52a3faf6a7872e6f1867fd8e"
+    },
+    {
+      "name": "control-and-slash",
+      "value": {
+        "k": "tab\tnl\ncr\rq\"bs\\slash/\u0001\u001f"
+      },
+      "canonical": "{\"k\":\"tab\\tnl\\ncr\\rq\\\"bs\\\\slash/\\u0001\\u001f\"}",
+      "sha256": "3a2a7d750d6aaf499a9f3877b193c8476af79e6bcf2f4bcff76f55867bbe5be6"
+    },
+    {
+      "name": "case-order",
+      "value": {
+        "b": 1,
+        "B": 2,
+        "a": 3,
+        "A": 4,
+        "_": 5,
+        "~": 6,
+        "é": 7,
+        "z": 8
+      },
+      "canonical": "{\"A\":4,\"B\":2,\"_\":5,\"a\":3,\"b\":1,\"z\":8,\"~\":6,\"é\":7}",
+      "sha256": "d50592d0da960dc7d46396bd0c0ffbc4f6834c97b84b57141f3d4f6e11386a44"
+    },
+    {
+      "name": "array-of-objects",
+      "value": [
+        {
+          "z": 1,
+          "a": 2
+        },
+        {
+          "a": [
+            1,
+            2,
+            {
+              "c": null
+            }
+          ]
+        }
+      ],
+      "canonical": "[{\"a\":2,\"z\":1},{\"a\":[1,2,{\"c\":null}]}]",
+      "sha256": "ba0a8ca3da32beb8567c432058ec97e2f80fd25e65d19a7ae1d9a77d84f182d3"
+    },
+    {
+      "name": "astral-and-fullwidth-order",
+      "value": {
+        "😀": 1,
+        "﹏": 2,
+        "ｚ": 3,
+        "z": 4,
+        " ": 5
+      },
+      "canonical": "{\"z\":4,\" \":5,\"😀\":1,\"﹏\":2,\"ｚ\":3}",
+      "sha256": "94ff22a86fdd27eb6da4899bb03aa1ae199860fd14443b7d8ecd17cee2837935"
+    },
+    {
+      "name": "bool-vs-int",
+      "value": {
+        "t": true,
+        "f": false,
+        "one": 1,
+        "zero": 0,
+        "null": null
+      },
+      "canonical": "{\"f\":false,\"null\":null,\"one\":1,\"t\":true,\"zero\":0}",
+      "sha256": "d4520245d56c68ed8c6c098df0a707d356aa2c0ced5bac129883a8cbf8f1d985"
+    }
+  ],
+  "merkle": {
+    "leaves": [
+      {
+        "schema": "tee-ai-test-leaf/v1",
+        "index": 0,
+        "value": 0
+      },
+      {
+        "schema": "tee-ai-test-leaf/v1",
+        "index": 1,
+        "value": 1
+      },
+      {
+        "schema": "tee-ai-test-leaf/v1",
+        "index": 2,
+        "value": 4
+      },
+      {
+        "schema": "tee-ai-test-leaf/v1",
+        "index": 3,
+        "value": 9
+      },
+      {
+        "schema": "tee-ai-test-leaf/v1",
+        "index": 4,
+        "value": 16
+      }
+    ],
+    "leafHashes": [
+      "c7d0ee24617b661a1885611504f7c6b964f31aa7bcb6449beaa310ad79560ce6",
+      "7cce9c800de29d56ae6acd7632676994bb5296b1190923a51e35e19b8114291a",
+      "c735316152b90dd5012ee6f813bead541ea43c4b5c3831b38624959bae9b3851",
+      "c62213f4d7dd69c7946ed0eeaac6b3749e87379e7f7938f47e1c4a35be52b440",
+      "f7961f8dd80d6079698e2270f71635fae045e4bf06a3fc9ae5989af4bbc6cf11"
+    ],
+    "roots": [
+      {
+        "n": 1,
+        "root": "c7d0ee24617b661a1885611504f7c6b964f31aa7bcb6449beaa310ad79560ce6"
+      },
+      {
+        "n": 2,
+        "root": "d1718195ea7933f7a49abdd7d947ec1d520deaed0f9f98b03e509b37f4cfcf9d"
+      },
+      {
+        "n": 3,
+        "root": "e3542d4200d877afe43cc849906a647c9bf48b121e6d7904788d12097f8af484"
+      },
+      {
+        "n": 4,
+        "root": "3f6cdf29168736d3f1b992f9a4c35336c48e5ee74e6df17dd00c206222b85bcb"
+      },
+      {
+        "n": 5,
+        "root": "e94b89e2e869bce1bdb468071f7518bffc8277d8814c0e0a8d74ea1d6f00b8c9"
+      }
+    ],
+    "proofs": [
+      {
+        "n": 5,
+        "index": 0,
+        "root": "e94b89e2e869bce1bdb468071f7518bffc8277d8814c0e0a8d74ea1d6f00b8c9",
+        "proof": [
+          {
+            "hash": "7cce9c800de29d56ae6acd7632676994bb5296b1190923a51e35e19b8114291a",
+            "side": "right"
+          },
+          {
+            "hash": "9cb341cacbd7a4bb6fa71564fb31867085d81c3509009a3eb3340e07c8b277e1",
+            "side": "right"
+          },
+          {
+            "hash": "f7961f8dd80d6079698e2270f71635fae045e4bf06a3fc9ae5989af4bbc6cf11",
+            "side": "right"
+          }
+        ]
+      },
+      {
+        "n": 5,
+        "index": 1,
+        "root": "e94b89e2e869bce1bdb468071f7518bffc8277d8814c0e0a8d74ea1d6f00b8c9",
+        "proof": [
+          {
+            "hash": "c7d0ee24617b661a1885611504f7c6b964f31aa7bcb6449beaa310ad79560ce6",
+            "side": "left"
+          },
+          {
+            "hash": "9cb341cacbd7a4bb6fa71564fb31867085d81c3509009a3eb3340e07c8b277e1",
+            "side": "right"
+          },
+          {
+            "hash": "f7961f8dd80d6079698e2270f71635fae045e4bf06a3fc9ae5989af4bbc6cf11",
+            "side": "right"
+          }
+        ]
+      },
+      {
+        "n": 5,
+        "index": 2,
+        "root": "e94b89e2e869bce1bdb468071f7518bffc8277d8814c0e0a8d74ea1d6f00b8c9",
+        "proof": [
+          {
+            "hash": "c62213f4d7dd69c7946ed0eeaac6b3749e87379e7f7938f47e1c4a35be52b440",
+            "side": "right"
+          },
+          {
+            "hash": "d1718195ea7933f7a49abdd7d947ec1d520deaed0f9f98b03e509b37f4cfcf9d",
+            "side": "left"
+          },
+          {
+            "hash": "f7961f8dd80d6079698e2270f71635fae045e4bf06a3fc9ae5989af4bbc6cf11",
+            "side": "right"
+          }
+        ]
+      },
+      {
+        "n": 5,
+        "index": 3,
+        "root": "e94b89e2e869bce1bdb468071f7518bffc8277d8814c0e0a8d74ea1d6f00b8c9",
+        "proof": [
+          {
+            "hash": "c735316152b90dd5012ee6f813bead541ea43c4b5c3831b38624959bae9b3851",
+            "side": "left"
+          },
+          {
+            "hash": "d1718195ea7933f7a49abdd7d947ec1d520deaed0f9f98b03e509b37f4cfcf9d",
+            "side": "left"
+          },
+          {
+            "hash": "f7961f8dd80d6079698e2270f71635fae045e4bf06a3fc9ae5989af4bbc6cf11",
+            "side": "right"
+          }
+        ]
+      },
+      {
+        "n": 5,
+        "index": 4,
+        "root": "e94b89e2e869bce1bdb468071f7518bffc8277d8814c0e0a8d74ea1d6f00b8c9",
+        "proof": [
+          {
+            "hash": "3f6cdf29168736d3f1b992f9a4c35336c48e5ee74e6df17dd00c206222b85bcb",
+            "side": "left"
+          }
+        ]
+      },
+      {
+        "n": 3,
+        "index": 2,
+        "root": "e3542d4200d877afe43cc849906a647c9bf48b121e6d7904788d12097f8af484",
+        "proof": [
+          {
+            "hash": "d1718195ea7933f7a49abdd7d947ec1d520deaed0f9f98b03e509b37f4cfcf9d",
+            "side": "left"
+          }
+        ]
+      }
+    ]
+  },
+  "disclosure": [
+    {
+      "resultsRoot": "0000000000000000000000000000000000000000000000000000000000000000",
+      "datasetHash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "modelCommitment": "0000000000000000000000000000000000000000000000000000000000000000",
+      "leafCount": 12,
+      "percent": 25,
+      "min": 3,
+      "max": 8,
+      "count": 3,
+      "seed": "4667a2abf4bcd767db9bf9242a210a410b2acba1eaf3823df34a632da3d2d4e6",
+      "indices": [
+        0,
+        7,
+        11
+      ]
+    },
+    {
+      "resultsRoot": "4813494d137e1631bba301d5acab6e7bb7aa74ce1185d456565ef51d737677b2",
+      "datasetHash": "b277fd623676a525c29b9eb155afc8c9010681814ceafb2d7627f47b9a232576",
+      "modelCommitment": "9372c470eeadd5ecd9c3c74c2b3cb633f8e2f2fad799250a0f70d652b6b825e4",
+      "leafCount": 48,
+      "percent": 25,
+      "min": 3,
+      "max": 8,
+      "count": 8,
+      "seed": "8b3d6d37c09c0d7ee789c08d843b7ae7e34eb0342dddd262a094ac7ca47db338",
+      "indices": [
+        1,
+        6,
+        7,
+        10,
+        24,
+        25,
+        28,
+        44
+      ]
+    },
+    {
+      "resultsRoot": "4813494d137e1631bba301d5acab6e7bb7aa74ce1185d456565ef51d737677b2",
+      "datasetHash": "b277fd623676a525c29b9eb155afc8c9010681814ceafb2d7627f47b9a232576",
+      "modelCommitment": "9372c470eeadd5ecd9c3c74c2b3cb633f8e2f2fad799250a0f70d652b6b825e4",
+      "leafCount": 8,
+      "percent": 25,
+      "min": 3,
+      "max": 8,
+      "count": 3,
+      "seed": "8b3d6d37c09c0d7ee789c08d843b7ae7e34eb0342dddd262a094ac7ca47db338",
+      "indices": [
+        1,
+        4,
+        7
+      ]
+    },
+    {
+      "resultsRoot": "4813494d137e1631bba301d5acab6e7bb7aa74ce1185d456565ef51d737677b2",
+      "datasetHash": "b277fd623676a525c29b9eb155afc8c9010681814ceafb2d7627f47b9a232576",
+      "modelCommitment": "9372c470eeadd5ecd9c3c74c2b3cb633f8e2f2fad799250a0f70d652b6b825e4",
+      "leafCount": 6,
+      "percent": 25,
+      "min": 3,
+      "max": 8,
+      "count": 3,
+      "seed": "8b3d6d37c09c0d7ee789c08d843b7ae7e34eb0342dddd262a094ac7ca47db338",
+      "indices": [
+        0,
+        1,
+        4
+      ]
+    },
+    {
+      "resultsRoot": "4813494d137e1631bba301d5acab6e7bb7aa74ce1185d456565ef51d737677b2",
+      "datasetHash": "b277fd623676a525c29b9eb155afc8c9010681814ceafb2d7627f47b9a232576",
+      "modelCommitment": "9372c470eeadd5ecd9c3c74c2b3cb633f8e2f2fad799250a0f70d652b6b825e4",
+      "leafCount": 3,
+      "percent": 25,
+      "min": 3,
+      "max": 8,
+      "count": 3,
+      "seed": "8b3d6d37c09c0d7ee789c08d843b7ae7e34eb0342dddd262a094ac7ca47db338",
+      "indices": [
+        0,
+        1,
+        2
+      ]
+    },
+    {
+      "resultsRoot": "4813494d137e1631bba301d5acab6e7bb7aa74ce1185d456565ef51d737677b2",
+      "datasetHash": "b277fd623676a525c29b9eb155afc8c9010681814ceafb2d7627f47b9a232576",
+      "modelCommitment": "9372c470eeadd5ecd9c3c74c2b3cb633f8e2f2fad799250a0f70d652b6b825e4",
+      "leafCount": 200,
+      "percent": 25,
+      "min": 3,
+      "max": 8,
+      "count": 8,
+      "seed": "8b3d6d37c09c0d7ee789c08d843b7ae7e34eb0342dddd262a094ac7ca47db338",
+      "indices": [
+        6,
+        9,
+        28,
+        66,
+        116,
+        148,
+        192,
+        199
+      ]
+    }
+  ],
+  "nonce": [
+    {
+      "inputs": {
+        "resultsRoot": "0000000000000000000000000000000000000000000000000000000000000000",
+        "datasetHash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "registryHash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "modelCommitment": "0000000000000000000000000000000000000000000000000000000000000000",
+        "policyHash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "publicKeyFingerprint": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "nonce": "0023d7d2871c32e71448e44555200d5f8b0ae4bf0afc4a0be07d8d1be3a7a300"
+    },
+    {
+      "inputs": {
+        "resultsRoot": "4813494d137e1631bba301d5acab6e7bb7aa74ce1185d456565ef51d737677b2",
+        "datasetHash": "b277fd623676a525c29b9eb155afc8c9010681814ceafb2d7627f47b9a232576",
+        "registryHash": "872491a30d60d598962de6e7b834ab76b2aa65fbab102c6ebaaae6acdc238822",
+        "modelCommitment": "9372c470eeadd5ecd9c3c74c2b3cb633f8e2f2fad799250a0f70d652b6b825e4",
+        "policyHash": "823412d1eacb67956220e532959f0104603057c88704863ca38e7cd188fda812",
+        "publicKeyFingerprint": "2c70e12b7a0646f92279f427c7b38e7334d8e5389cff167a1dc30e73f826b683"
+      },
+      "nonce": "892ef705037fa8b165395974df8e9ba5b3cec86e805d4619947a095083f676b8"
+    }
+  ],
+  "fixedPoint": {
+    "divRound": [
+      {
+        "a": 7,
+        "b": 2,
+        "result": 4
+      },
+      {
+        "a": -7,
+        "b": 2,
+        "result": -3
+      },
+      {
+        "a": 5,
+        "b": 3,
+        "result": 2
+      },
+      {
+        "a": -5,
+        "b": 3,
+        "result": -2
+      },
+      {
+        "a": 0,
+        "b": 4,
+        "result": 0
+      },
+      {
+        "a": 1,
+        "b": 3,
+        "result": 0
+      },
+      {
+        "a": 2,
+        "b": 3,
+        "result": 1
+      },
+      {
+        "a": 999,
+        "b": 1000,
+        "result": 1
+      },
+      {
+        "a": 1000,
+        "b": 3,
+        "result": 333
+      }
+    ],
+    "fixed": [
+      {
+        "value": 0.12345,
+        "scale": 10000,
+        "result": 1235
+      },
+      {
+        "value": -5e-05,
+        "scale": 10000,
+        "result": -1
+      },
+      {
+        "value": 2.5,
+        "scale": 1,
+        "result": 3
+      },
+      {
+        "value": -2.5,
+        "scale": 1,
+        "result": -3
+      },
+      {
+        "value": 0.0005,
+        "scale": 1000,
+        "result": 1
+      },
+      {
+        "value": 1e-09,
+        "scale": 1000,
+        "result": 0
+      }
+    ]
+  }
+}

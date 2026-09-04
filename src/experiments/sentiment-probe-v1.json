@@ -1,0 +1,209 @@
+{
+  "schema": "tee-ai-experiment/v1",
+  "id": "sentiment-probe-v1",
+  "kind": "linear-probe",
+  "title": "Sentiment linear probe",
+  "description": "Trains a logistic-regression probe on each layer's final-token residual to separate positive from negative sentences (48 examples, stratified 25% held out). Probe weights stay sealed; only per-example predictions are committed.",
+  "params": {
+    "maxTextTokens": 48,
+    "testPercent": 25,
+    "seed": 20260610,
+    "steps": 300,
+    "learningRateMicro": 50000,
+    "weightDecayMicro": 1000
+  },
+  "items": [
+    {
+      "text": "I absolutely loved the movie and would watch it again.",
+      "label": 1
+    },
+    {
+      "text": "The food at this restaurant was wonderful and fresh.",
+      "label": 1
+    },
+    {
+      "text": "She felt joyful and grateful after the celebration.",
+      "label": 1
+    },
+    {
+      "text": "This is the best book I have read all year.",
+      "label": 1
+    },
+    {
+      "text": "The team played brilliantly and won the championship.",
+      "label": 1
+    },
+    {
+      "text": "What a beautiful morning, the sun is shining.",
+      "label": 1
+    },
+    {
+      "text": "The concert was amazing and the crowd cheered.",
+      "label": 1
+    },
+    {
+      "text": "He was thrilled with his excellent exam results.",
+      "label": 1
+    },
+    {
+      "text": "The garden looked stunning in the spring sunshine.",
+      "label": 1
+    },
+    {
+      "text": "Their new album is fantastic from start to finish.",
+      "label": 1
+    },
+    {
+      "text": "The hotel staff were friendly and incredibly helpful.",
+      "label": 1
+    },
+    {
+      "text": "We had a delightful picnic by the lake.",
+      "label": 1
+    },
+    {
+      "text": "The new cafe on the corner serves the best coffee in town.",
+      "label": 1
+    },
+    {
+      "text": "My grandmother's stories always make everyone laugh with joy.",
+      "label": 1
+    },
+    {
+      "text": "The software update fixed every bug and feels much faster.",
+      "label": 1
+    },
+    {
+      "text": "Our neighbors threw a warm and welcoming party for us.",
+      "label": 1
+    },
+    {
+      "text": "The museum exhibit was fascinating and beautifully curated.",
+      "label": 1
+    },
+    {
+      "text": "I felt proud watching my daughter graduate with honors.",
+      "label": 1
+    },
+    {
+      "text": "The hike rewarded us with breathtaking views at the summit.",
+      "label": 1
+    },
+    {
+      "text": "This little bakery makes the most delicious croissants.",
+      "label": 1
+    },
+    {
+      "text": "The nurse was kind, patient, and put me at ease.",
+      "label": 1
+    },
+    {
+      "text": "Our vacation was relaxing and everything went perfectly.",
+      "label": 1
+    },
+    {
+      "text": "The children giggled happily as the puppy chased the ball.",
+      "label": 1
+    },
+    {
+      "text": "The presentation was clear, engaging, and inspiring.",
+      "label": 1
+    },
+    {
+      "text": "I hated the movie and left before the ending.",
+      "label": 0
+    },
+    {
+      "text": "The food was awful and the service was terrible.",
+      "label": 0
+    },
+    {
+      "text": "She felt miserable and exhausted after the long delay.",
+      "label": 0
+    },
+    {
+      "text": "This is the worst book I have ever read.",
+      "label": 0
+    },
+    {
+      "text": "The team played poorly and lost every match.",
+      "label": 0
+    },
+    {
+      "text": "What a dreadful storm, the streets are flooded.",
+      "label": 0
+    },
+    {
+      "text": "The concert was boring and people walked out.",
+      "label": 0
+    },
+    {
+      "text": "He was devastated by the disappointing news.",
+      "label": 0
+    },
+    {
+      "text": "The garden was ruined by the relentless frost.",
+      "label": 0
+    },
+    {
+      "text": "Their new album is dull and instantly forgettable.",
+      "label": 0
+    },
+    {
+      "text": "The hotel staff were rude and completely unhelpful.",
+      "label": 0
+    },
+    {
+      "text": "Our picnic was ruined by rain and mosquitoes.",
+      "label": 0
+    },
+    {
+      "text": "The new cafe on the corner serves burnt, bitter coffee.",
+      "label": 0
+    },
+    {
+      "text": "My commute was a nightmare of traffic and delays.",
+      "label": 0
+    },
+    {
+      "text": "The software update broke everything and crashes constantly.",
+      "label": 0
+    },
+    {
+      "text": "Our neighbors complained angrily about the noise all night.",
+      "label": 0
+    },
+    {
+      "text": "The museum exhibit was confusing and poorly labeled.",
+      "label": 0
+    },
+    {
+      "text": "I felt ashamed after failing the exam a second time.",
+      "label": 0
+    },
+    {
+      "text": "The hike was miserable, cold, and the trail was closed.",
+      "label": 0
+    },
+    {
+      "text": "This bakery sells stale bread at outrageous prices.",
+      "label": 0
+    },
+    {
+      "text": "The nurse was dismissive and ignored my questions.",
+      "label": 0
+    },
+    {
+      "text": "Our vacation was stressful and the flights were cancelled.",
+      "label": 0
+    },
+    {
+      "text": "The children cried after the puppy was taken away.",
+      "label": 0
+    },
+    {
+      "text": "The presentation was tedious, rambling, and pointless.",
+      "label": 0
+    }
+  ]
+}

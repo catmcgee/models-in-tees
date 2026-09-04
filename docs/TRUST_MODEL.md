@@ -1,115 +1,100 @@
 # Trust Model
 
-## Demo Claim
+## The Claim
 
-The demo proves this local workflow:
+A run of a registered experiment produces a signed receipt that says:
 
-1. A private model version is represented by a SHA-256 commitment.
-2. Public prompts are sent to the API.
-3. A private runner loads GPT-2 files from `private/llm`.
-4. The runner returns generated text and run hashes, not weights.
-5. The API collects TEE evidence and binds its hash into the receipt payload.
-6. The API signs a canonical receipt with an Ed25519 runner key.
-7. The receipt can be verified later against the public key and payload digest.
-8. The receipt digest can be timestamped on Solana devnet.
+> The model with commitment **M**, run inside the attested environment **E**,
+> produced per-item results whose Merkle root is **R** on the committed dataset
+> **D** (from registry **G**) under leakage policy **P**. These aggregates and
+> these opened items are exactly what that run computed.
+
+Every letter in that sentence is a hash that a third party can recompute from
+public material, in the browser, without trusting the API.
+
+## How A Run Is Bound Together
+
+1. The registry (`src/experiments/*.json`) is committed by `registryHash`; every
+   experiment's items are committed by `datasetHash`. Both files and the runner
+   code are inside the measured workload.
+2. The runner computes one canonical leaf per item and builds an RFC 6962
+   Merkle tree over them. Aggregate metrics are pure integer functions of the
+   leaves, so anyone holding the opened leaves can recheck the arithmetic and
+   anyone holding all leaves can recompute the metrics exactly.
+3. A seed derived from `resultsRoot || datasetHash || modelCommitment` picks
+   which leaves are opened (25%, min 3, max 8). The operator cannot steer it,
+   and re-running an unchanged experiment opens the same items again, so
+   repeated runs leak nothing new.
+4. The attestation nonce is
+   `sha256("tee-ai-nonce/v1" || resultsRoot || datasetHash || registryHash || modelCommitment || policyHash || signerFingerprint)`.
+   It is handed to `gotpm token --custom-nonce`, so the Google Confidential VM
+   token's `eat_nonce` claim commits to the exact results, not just to "a run".
+5. The receipt payload contains the aggregates, the opened leaves with their
+   inclusion proofs, the policy, the nonce, and the TEE evidence hash, and is
+   signed with the runner's Ed25519 key over canonical JSON.
+6. Optionally the receipt digest, model commitment, experiment id hash, dataset
+   hash, results root, policy hash and TEE evidence hash are written to the
+   `experiment_receipts` Solana program (one immutable PDA per receipt) and
+   read back field by field during audit.
+
+## Canonical Hashing
+
+Everything is hashed over `tee-ai-canonical-json/v1`: keys sorted by UTF-16
+code units, no whitespace, JSON.stringify escaping, and **integers only**.
+Probabilities are basis points (`Bp`, x10 000), log-probs and scores are
+`Milli` (x1 000), SAE activations are `Centi` (x100). Python and TypeScript
+share known-answer vectors in `src/shared/test-vectors.json`; the API refuses
+to sign a run whose `policyHash` or `metricsHash` it cannot reproduce.
 
 ## What Is Real
 
-- The public demo path uses a GPT-2 causal language model through
-  Hugging Face Transformers.
-- GPT-2 files are cached outside the served source tree under `private/llm`.
-- Receipts use deterministic canonical JSON hashing.
-- Receipts are signed with Ed25519.
-- The deployed GCP VM exposes Google Confidential VM attestation claims through
-  `/api/tee/evidence`.
-- VM receipts include `runner.teeEvidenceHash` and a public TEE summary with
-  `GCP_AMD_SEV`, secure boot status, project, zone, and instance.
-- VM receipts now bind a workload hash covering the app source, built server,
-  built frontend assets, model runner, package metadata, and Solana program
-  source present on the VM.
-- Stored receipt evidence can be audited through `/api/receipts/:id/audit`,
-  including Google JWT signature verification against the Confidential Computing
-  signer JWKS.
-- Solana devnet commits use a deployed Anchor program; Memo remains a fallback.
+- The sealed model is `google/gemma-3-1b-pt`, committed by the SHA-256 of its
+  weight, config and tokenizer files. The weights are never served.
+- The SAE experiment uses Google's Gemma Scope 2 dictionary (CC-BY-4.0),
+  committed the same way.
+- Receipts are Ed25519 signatures over canonical JSON. Verification runs in
+  the browser with WebCrypto (`src/shared/verify.ts`).
+- On the Confidential VM, the Google claims token is fetched with the derived
+  nonce, verified against Google's JWKS, and checked for issuer, audience,
+  nonce, validity window, `GCP_AMD_SEV` and secure boot.
+- The workload hash covers the source tree, registry, built server, built
+  frontend, runner and program source. It is re-measured at audit time.
+- Solana commitments use the upgraded Anchor program and are read back.
 
-## Auditor Suites And The Leakage Policy
+## Leakage Policy
 
-The auditor lab adds four experiments that make claims over committed datasets
-instead of single prompts:
-
-1. Behavior evals (`/api/audit-suite`): expected-token accuracy, memorization
-   checks, and paired-bias gaps, aggregated over the suite.
-2. Linear probes (`/api/probe`): per-layer held-out accuracy for a labeled
-   concept, trained on hidden states inside the runner.
-3. Patch suites (`/api/patch-suite`): mean and spread of activation-patching
-   recovery per layer across clean/corrupted pairs.
-4. SAE feature reports (`/api/features`): firing rates for sparse-autoencoder
-   dictionary features (`npm run train:sae` builds the demo dictionary).
-
-Every suite receipt binds dataset hash, model commitment, aggregate result
-hash, leakage policy hash, and TEE evidence hash. The claim it supports is:
-"the model with commitment X scored Y on the committed dataset Z under policy
-P" - checkable without seeing the weights.
-
-The leakage policy is capped detail, not quotas. Quotas are evaded with new
-identities; detail caps bound what any single response reveals about the
-private weights:
-
-- Probabilities, log-probs, and scores are coarsened (3 decimals; logits 2).
-  Model-extraction attacks feed on output precision.
-- Top-k is capped at 3 everywhere.
-- Suites return aggregates only; per-item results never leave the runner.
-- Probe weight vectors stay inside the runner; they are directions in private
-  activation space.
-- Minimum suite sizes stop one-item "suites" recovering single-prompt detail
-  through the aggregate path.
-
-The policy object ships inside every result and its hash is signed into the
-receipt, so an auditor can prove which caps governed a run. The caps are a
-declared engineering heuristic: nobody can yet compute the theoretically
-correct release budget for model internals, and this design does not claim to.
+Detail caps, not quotas. Numbers are fixed-point at declared scales, per-item
+results are sealed except for the seeded sample, probe weights and raw
+activations never leave the runner, and suite sizes are bounded. The policy
+object is inside the signed receipt. The caps are an engineering heuristic;
+nobody can yet compute the theoretically correct release budget for model
+internals, and this design does not claim to.
 
 ## What Is Still Limited
 
-- Local development is still a simulation. Only the deployed Google Confidential
-  VM path has hardware-backed VM attestation.
-- The runner key is stored inside the Confidential VM filesystem under
-  `private/attestation`. A stronger production build would generate and seal this
-  key inside a measured workload and bind the key certificate to the attestation
-  report.
-- Google AMD SEV Confidential VM attestation proves the VM identity and measured
-  boot claims. It does not by itself prove every Python/Node source file loaded
-  at runtime unless those measurements are added to the attested workload policy.
-- The demo does not prove that GPT-2 weights are correct by revealing them. It
-  proves that a specific committed model runner signed a specific output.
-
-## Production Upgrade Path
-
-1. Move the model runner into a measured confidential workload image.
-2. Generate and seal the Ed25519 receipt key inside that measured workload.
-3. Bind the model commitment, container image hash, and workload measurement into
-   the Google attestation policy.
-4. Store the TEE evidence hash and receipt digest in the Solana program account.
-5. Add model provenance controls around checkpoint import, review, and rollback.
+- AMD SEV attestation measures the VM boot, not the Python and Node code. The
+  workload hash is measured and reported by the Node process itself; it is
+  honest self-report bound into the attested nonce, not a hardware measurement.
+- The Ed25519 signing key is a file on the VM. A stronger build would generate
+  it inside a measured workload and bind it to the attestation report.
+- fp32 results are bit-stable on the VM, but other CPUs or BLAS builds can
+  differ in the last bits. The receipt attests what the attested VM computed;
+  it does not promise bit-exact re-execution elsewhere.
+- Local development (`TEE_MODE=local-dev-sim`) has no hardware token; every
+  other check still runs.
+- Opening leaves beyond the seeded sample is not exposed; the sealed leaves are
+  stored on the VM so a gated "open item N" path could be added later.
 
 ## What The Public Can Verify
 
-Given a receipt, a verifier can check:
+Given a public record (receipt + descriptive context) and the registry file:
 
-- The payload was not modified after signing.
-- The payload digest matches the signed material.
-- The receipt references a stable model commitment.
-- The prompt, output, and sampling parameter hashes match the payload.
-- The receipt binds to a TEE evidence hash.
-- The stored evidence hash recomputes to the receipt-bound value.
-- The Google token, when present, has a valid RS256 signature, issuer, audience,
-  nonce, validity window, `GCP_AMD_SEV` hardware claim, and secure boot claim.
-- The stored workload hash matches the currently deployed workload.
-- A Solana Anchor transaction, when present, timestamped the receipt digest.
-- The API can produce a fresh Google claims token for the current VM when raw
-  evidence exposure is explicitly enabled with `ALLOW_RAW_TEE_EVIDENCE=1`.
-
-The public cannot verify the private weights directly. The credible proof is the
-combination of model commitment, receipt signature, Google VM attestation, and
-Solana timestamp. The remaining hardening work is to make the measured workload
-policy cover the exact runner code and receipt key.
+- Receipt digest and Ed25519 signature; signer fingerprint (optionally pinned).
+- `policyHash`, `metricsHash`, `datasetHash` recomputed from public JSON.
+- `leafCount == itemCount`.
+- Disclosure seed and indices recomputed from committed material.
+- Every opened leaf's hash and its inclusion proof against `resultsRoot`.
+- The attestation nonce recomputed from receipt fields, equal to the evidence
+  nonce and, on the VM, to the Google token's `eat_nonce`.
+- The stored evidence hash, the workload hash, and the Google token claims.
+- The on-chain commitment account, decoded and compared field by field.

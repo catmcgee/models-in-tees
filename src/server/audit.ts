@@ -1,63 +1,73 @@
 import { createPublicKey, verify as verifyCrypto } from "node:crypto";
 import type { JsonWebKey as CryptoJsonWebKey } from "node:crypto";
+import { verifyExperimentRecord } from "../shared/verify.js";
+import { readExperimentCommitment } from "./anchorCommit.js";
 import { config } from "./config.js";
-import { fromBase64url, sha256Hex } from "./canonical.js";
-import { verifySignedReceipt } from "./receipts.js";
+import { fromBase64url, sha256HexSync } from "./canonical.js";
 import { getWorkloadMeasurement } from "./workload.js";
-import type { AuditCheck, ReceiptAudit, SignedPayload, TeeEvidence } from "./types.js";
+import type {
+  AuditCheck,
+  ReceiptAudit,
+  SignedExperimentReceipt,
+  SolanaCommitment,
+  TeeEvidence
+} from "./types.js";
 
 const googleJwksUrl =
   "https://www.googleapis.com/service_accounts/v1/metadata/jwk/signer@confidentialspace-sign.iam.gserviceaccount.com";
-let jwksCache:
-  | {
-      fetchedAt: number;
-      keys: JsonWebKeyWithKid[];
-    }
-  | undefined;
+let jwksCache: { fetchedAt: number; keys: JsonWebKeyWithKid[] } | undefined;
 
 interface JsonWebKeyWithKid {
   [key: string]: unknown;
   kid?: string;
 }
 
+export interface AuditOptions {
+  /** Registry items so the dataset hash can be recomputed. */
+  items?: Array<Record<string, unknown>>;
+  /** Existing chain commitment; when confirmed, the PDA is read back. */
+  solanaCommitment?: SolanaCommitment | null;
+  /** Skip network calls (JWKS, RPC). */
+  offline?: boolean;
+}
+
 export async function auditReceiptEvidence(
-  receipt: SignedPayload,
-  evidence?: TeeEvidence | null
+  receipt: SignedExperimentReceipt,
+  evidence?: TeeEvidence | null,
+  options: AuditOptions = {}
 ): Promise<ReceiptAudit> {
-  const checks: AuditCheck[] = [];
-  const receiptVerification = verifySignedReceipt(receipt);
-  addCheck(
-    checks,
-    "receipt-signature",
-    receiptVerification.ok,
-    receiptVerification.reason || receiptVerification.digest
+  const verification = await verifyExperimentRecord(
+    { receipt },
+    { items: options.items, trustedFingerprints: config.trustedRunnerFingerprints }
   );
+  const checks: AuditCheck[] = [...verification.checks];
 
   if (!evidence) {
     addCheck(checks, "tee-evidence-present", false, "No full TEE evidence was stored.");
     return buildAudit(receipt, evidence, checks);
   }
+  addCheck(checks, "tee-evidence-present", true, evidence.evidenceHash);
 
   addCheck(
     checks,
     "receipt-binds-evidence",
-    receipt.payload.runner.teeEvidenceHash === evidence.evidenceHash,
-    `receipt=${receipt.payload.runner.teeEvidenceHash || "missing"} evidence=${evidence.evidenceHash}`
+    receipt.payload.attestation.teeEvidenceHash === evidence.evidenceHash,
+    `receipt=${receipt.payload.attestation.teeEvidenceHash} evidence=${evidence.evidenceHash}`
   );
-
   const recomputedEvidenceHash = recomputeEvidenceHash(evidence);
+  addCheck(checks, "evidence-hash", recomputedEvidenceHash === evidence.evidenceHash, recomputedEvidenceHash);
   addCheck(
     checks,
-    "evidence-hash",
-    recomputedEvidenceHash === evidence.evidenceHash,
-    recomputedEvidenceHash
+    "evidence-nonce-match",
+    evidence.nonce === receipt.payload.attestation.nonce,
+    evidence.nonce
   );
 
-  if (receipt.payload.runner.teeEvidence?.workloadHash && evidence.workload) {
+  if (receipt.payload.attestation.workloadHash && evidence.workload) {
     addCheck(
       checks,
       "receipt-binds-workload",
-      receipt.payload.runner.teeEvidence.workloadHash === evidence.workload.workloadHash,
+      receipt.payload.attestation.workloadHash === evidence.workload.workloadHash,
       evidence.workload.workloadHash
     );
   } else {
@@ -76,18 +86,36 @@ export async function auditReceiptEvidence(
     addCheck(checks, "current-workload-match", false, "No workload measurement.");
   }
 
-  await auditGoogleToken(evidence, checks);
+  await auditGoogleToken(evidence, receipt.payload.attestation.nonce, checks, options.offline === true);
+
+  if (options.solanaCommitment?.kind === "anchor-program" && options.solanaCommitment.status === "confirmed") {
+    if (options.offline) {
+      checks.push({ name: "chain-readback", status: "skip", detail: "offline audit" });
+    } else {
+      try {
+        const readback = await readExperimentCommitment(receipt);
+        checks.push(...readback.checks);
+      } catch (error) {
+        checks.push({ name: "chain-readback", status: "skip", detail: `RPC unavailable: ${errorMessage(error)}` });
+      }
+    }
+  } else {
+    checks.push({ name: "chain-readback", status: "skip", detail: "no confirmed program commitment" });
+  }
+
   return buildAudit(receipt, evidence, checks);
 }
 
 function buildAudit(
-  receipt: SignedPayload,
+  receipt: SignedExperimentReceipt,
   evidence: TeeEvidence | null | undefined,
   checks: AuditCheck[]
 ): ReceiptAudit {
   return {
     ok: checks.every((check) => check.status !== "fail"),
     receiptDigest: receipt.digest,
+    resultsRoot: receipt.payload.results?.resultsRoot,
+    nonce: receipt.payload.attestation?.nonce,
     evidenceHash: evidence?.evidenceHash,
     workloadHash: evidence?.workload?.workloadHash,
     checks
@@ -96,7 +124,9 @@ function buildAudit(
 
 async function auditGoogleToken(
   evidence: TeeEvidence,
-  checks: AuditCheck[]
+  expectedNonce: string,
+  checks: AuditCheck[],
+  offline: boolean
 ): Promise<void> {
   const token = evidence.attestation.token;
   const rawToken = token?.rawToken;
@@ -116,14 +146,9 @@ async function auditGoogleToken(
   }
 
   addCheck(checks, "google-token-present", true, token.tokenHash);
-  addCheck(checks, "google-token-hash", sha256Hex(rawToken) === token.tokenHash);
+  addCheck(checks, "google-token-hash", sha256HexSync(rawToken) === token.tokenHash);
 
-  let decoded: {
-    header: Record<string, unknown>;
-    claims: Record<string, unknown>;
-    signingInput: string;
-    signature: Buffer;
-  };
+  let decoded: ReturnType<typeof decodeJwt>;
   try {
     decoded = decodeJwt(rawToken);
   } catch (error) {
@@ -132,11 +157,14 @@ async function auditGoogleToken(
   }
   addCheck(checks, "google-token-decode", true);
 
-  try {
-    const verified = await verifyJwtSignature(decoded);
-    addCheck(checks, "google-token-signature", verified);
-  } catch (error) {
-    addCheck(checks, "google-token-signature", false, errorMessage(error));
+  if (offline) {
+    checks.push({ name: "google-token-signature", status: "skip", detail: "offline audit" });
+  } else {
+    try {
+      addCheck(checks, "google-token-signature", await verifyJwtSignature(decoded));
+    } catch (error) {
+      addCheck(checks, "google-token-signature", false, errorMessage(error));
+    }
   }
 
   addCheck(
@@ -154,7 +182,7 @@ async function auditGoogleToken(
   addCheck(
     checks,
     "google-token-nonce",
-    stringClaim(decoded.claims.eat_nonce) === evidence.nonce,
+    stringClaim(decoded.claims.eat_nonce) === expectedNonce && expectedNonce === evidence.nonce,
     stringClaim(decoded.claims.eat_nonce)
   );
   addCheck(
@@ -169,17 +197,12 @@ async function auditGoogleToken(
     stringClaim(decoded.claims.hwmodel) === "GCP_AMD_SEV",
     stringClaim(decoded.claims.hwmodel)
   );
-  addCheck(
-    checks,
-    "google-secure-boot",
-    decoded.claims.secboot === true,
-    String(decoded.claims.secboot)
-  );
+  addCheck(checks, "google-secure-boot", decoded.claims.secboot === true, String(decoded.claims.secboot));
 }
 
 function recomputeEvidenceHash(evidence: TeeEvidence): string {
   const { evidenceHash: _evidenceHash, ...material } = evidence;
-  return sha256Hex(material);
+  return sha256HexSync(material);
 }
 
 function decodeJwt(token: string): {
@@ -193,22 +216,14 @@ function decodeJwt(token: string): {
     throw new Error("JWT must have three parts.");
   }
   return {
-    header: JSON.parse(fromBase64url(parts[0]).toString("utf-8")) as Record<
-      string,
-      unknown
-    >,
-    claims: JSON.parse(fromBase64url(parts[1]).toString("utf-8")) as Record<
-      string,
-      unknown
-    >,
+    header: JSON.parse(fromBase64url(parts[0]).toString("utf-8")) as Record<string, unknown>,
+    claims: JSON.parse(fromBase64url(parts[1]).toString("utf-8")) as Record<string, unknown>,
     signingInput: `${parts[0]}.${parts[1]}`,
     signature: fromBase64url(parts[2])
   };
 }
 
-async function verifyJwtSignature(
-  decoded: ReturnType<typeof decodeJwt>
-): Promise<boolean> {
+async function verifyJwtSignature(decoded: ReturnType<typeof decodeJwt>): Promise<boolean> {
   const kid = stringClaim(decoded.header.kid);
   const alg = stringClaim(decoded.header.alg);
   if (!kid || alg !== "RS256") {
@@ -218,16 +233,8 @@ async function verifyJwtSignature(
   if (!key) {
     return false;
   }
-  const publicKey = createPublicKey({
-    key: key as CryptoJsonWebKey,
-    format: "jwk"
-  });
-  return verifyCrypto(
-    "RSA-SHA256",
-    Buffer.from(decoded.signingInput),
-    publicKey,
-    decoded.signature
-  );
+  const publicKey = createPublicKey({ key: key as CryptoJsonWebKey, format: "jwk" });
+  return verifyCrypto("RSA-SHA256", Buffer.from(decoded.signingInput), publicKey, decoded.signature);
 }
 
 async function getGoogleJwks(): Promise<JsonWebKeyWithKid[]> {
@@ -244,10 +251,7 @@ async function getGoogleJwks(): Promise<JsonWebKeyWithKid[]> {
   return jwksCache.keys;
 }
 
-function tokenValidAtEvidenceTime(
-  claims: Record<string, unknown>,
-  collectedAt: string
-): boolean {
+function tokenValidAtEvidenceTime(claims: Record<string, unknown>, collectedAt: string): boolean {
   const at = Math.floor(Date.parse(collectedAt) / 1000);
   const nbf = numberClaim(claims.nbf);
   const iat = numberClaim(claims.iat);
@@ -258,17 +262,8 @@ function tokenValidAtEvidenceTime(
   return (nbf === undefined || nbf <= at) && iat <= at && at <= exp;
 }
 
-function addCheck(
-  checks: AuditCheck[],
-  name: string,
-  passed: boolean,
-  detail?: string
-): void {
-  checks.push({
-    name,
-    status: passed ? "pass" : "fail",
-    detail
-  });
+function addCheck(checks: AuditCheck[], name: string, passed: boolean, detail?: string): void {
+  checks.push({ name, status: passed ? "pass" : "fail", detail });
 }
 
 function stringClaim(value: unknown): string | undefined {

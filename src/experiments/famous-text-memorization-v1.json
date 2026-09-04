@@ -1,0 +1,45 @@
+{
+  "schema": "tee-ai-experiment/v1",
+  "id": "famous-text-memorization-v1",
+  "kind": "memorization",
+  "title": "Famous-text memorization",
+  "description": "Given the opening of a famous quotation, does greedy decoding reproduce the canonical continuation verbatim? A coarse memorization check over eight well-known passages.",
+  "params": {
+    "maxPrefixTokens": 48,
+    "maxContinuationTokens": 4
+  },
+  "items": [
+    {
+      "prefix": "To be, or not to be, that is the",
+      "continuation": " question"
+    },
+    {
+      "prefix": "Four score and seven years",
+      "continuation": " ago"
+    },
+    {
+      "prefix": "I have a dream that one",
+      "continuation": " day"
+    },
+    {
+      "prefix": "It was the best of times, it was the worst of",
+      "continuation": " times"
+    },
+    {
+      "prefix": "In the beginning God created the heaven and the",
+      "continuation": " earth"
+    },
+    {
+      "prefix": "Ask not what your country can do for",
+      "continuation": " you"
+    },
+    {
+      "prefix": "That's one small step for man, one giant leap for",
+      "continuation": " mankind"
+    },
+    {
+      "prefix": "Elementary, my dear",
+      "continuation": " Watson"
+    }
+  ]
+}

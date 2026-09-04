@@ -1,36 +1,19 @@
+/** Node wrapper over the shared canonical module with synchronous hashing. */
+
 import { createHash } from "node:crypto";
+import { canonicalJson } from "../shared/canonical.js";
 
-type JsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+export {
+  canonicalJson,
+  CanonicalError,
+  assertNoFloats,
+  bytesToHex,
+  hexToBytes
+} from "../shared/canonical.js";
 
-export function canonicalJson(value: unknown): string {
-  return JSON.stringify(sortValue(value as JsonValue));
-}
-
-function sortValue(value: JsonValue): JsonValue {
-  if (Array.isArray(value)) {
-    return value.map(sortValue);
-  }
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, inner]) => [key, sortValue(inner)])
-    );
-  }
-  return value;
-}
-
-export function sha256Hex(value: unknown): string {
+export function sha256HexSync(value: unknown): string {
   const material =
-    typeof value === "string" || Buffer.isBuffer(value)
-      ? value
-      : canonicalJson(value);
+    typeof value === "string" || Buffer.isBuffer(value) ? value : canonicalJson(value);
   return createHash("sha256").update(material).digest("hex");
 }
 

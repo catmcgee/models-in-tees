@@ -1,239 +1,225 @@
-import { once } from "node:events";
-import { createServer } from "node:http";
+/**
+ * End-to-end smoke test against an in-process API with the real runner:
+ * registry -> single-flight run -> leak scan -> verify -> tamper -> audit ->
+ * evidence -> dry-run commit -> chain read-back.
+ */
+
+import type { AddressInfo } from "node:net";
 import { createApp } from "../src/server/index.js";
+import { getRunner, stopRunner, warmRunner } from "../src/server/runnerClient.js";
+import type { PublicExperimentRecord, RecordVerification } from "../src/shared/receiptTypes.js";
 
-const server = createServer(createApp());
-server.listen(0, "127.0.0.1");
-await once(server, "listening");
-const address = server.address();
-if (!address || typeof address === "string") {
-  throw new Error("Could not bind smoke server");
-}
-const baseUrl = `http://127.0.0.1:${address.port}`;
+const FORBIDDEN_KEYS = [
+  "sealed",
+  "sealedLeaves",
+  "leafHashes",
+  "teeEvidence.attestation",
+  "rawToken",
+  "hiddenStates",
+  "rawHiddenStates",
+  "attentionTensor",
+  "attentionWeights",
+  "perItemResults",
+  "stateDict",
+  "parameters",
+  "gradients",
+  "mlpActivations",
+  "privateKeyPem",
+  "textproto"
+];
 
-try {
-  await expectOk(`${baseUrl}/api/health`);
-  await expectOk(`${baseUrl}/api/llm`);
-  const teeEvidence = await expectOk(`${baseUrl}/api/tee/evidence`);
-  if (!teeEvidence.summary?.evidenceHash) {
-    throw new Error("TEE evidence endpoint did not return an evidence hash");
-  }
+async function main(): Promise<void> {
+  const app = createApp();
+  const server = app.listen(0);
+  const port = (server.address() as AddressInfo).port;
+  const base = `http://127.0.0.1:${port}`;
+  const started = Date.now();
 
-  const generated = await postJson(`${baseUrl}/api/generate`, {
-    prompt: "Explain why a private GPT-2 receipt is useful in one sentence.",
-    maxNewTokens: 24,
-    temperature: 0.7,
-    topP: 0.9
-  });
-  const record = generated.record;
-  if (!record?.generation?.output || !record?.receipt?.digest) {
-    throw new Error("Generation endpoint did not return text and a receipt");
-  }
-  if (!record.receipt.payload.runner?.teeEvidenceHash) {
-    throw new Error("Generation receipt did not bind TEE evidence");
-  }
-  const storedEvidence = await expectOk(`${baseUrl}/api/receipts/${record.id}/evidence`);
-  if (storedEvidence.summary?.evidenceHash !== record.receipt.payload.runner.teeEvidenceHash) {
-    throw new Error("Stored TEE evidence does not match the receipt evidence hash");
-  }
-  const audit = await expectOk(`${baseUrl}/api/receipts/${record.id}/audit`);
-  if (!audit.audit?.ok) {
-    throw new Error(`Receipt audit failed: ${JSON.stringify(audit)}`);
-  }
-  const verification = await postJson(`${baseUrl}/api/verify`, {
-    receipt: record.receipt
-  });
-  if (!verification.verification?.ok) {
-    throw new Error(`Receipt verification failed: ${JSON.stringify(verification)}`);
-  }
-  const dryRun = await postJson(
-    `${baseUrl}/api/receipts/${record.id}/commit?dryRun=1`,
-    {}
-  );
-  if (dryRun.solanaCommitment?.status !== "dry-run") {
-    throw new Error("Dry-run Solana commitment did not return dry-run status");
-  }
+  try {
+    console.log("[smoke] warming runner…");
+    await warmRunner();
+    const health = await getJson<{ runner: { state: string }; registry: { ok: boolean; hash: string } }>(`${base}/api/health`);
+    assert(health.runner.state === "ready", `runner state ${health.runner.state}`);
+    assert(health.registry.ok, "registry not ok in health");
 
-  const interpreted = await postJson(`${baseUrl}/api/interpret`, {
-    prompt: "The capital of France is",
-    corruptedPrompt: "The capital of Germany is",
-    targetToken: " Paris",
-    topK: 3,
-    maxPromptTokens: 64
-  });
-  const interpretRecord = interpreted.record;
-  if (!interpretRecord?.result?.resultHash || !interpretRecord?.receipt?.digest) {
-    throw new Error("Interpretability endpoint did not return a result hash and receipt");
-  }
-  if (
-    interpretRecord.result.params.rawActivationsReturned !== false ||
-    interpretRecord.result.params.rawAttentionReturned !== false ||
-    interpretRecord.result.params.weightsReturned !== false
-  ) {
-    throw new Error("Interpretability endpoint exposed raw model internals");
-  }
-  assertNoForbiddenKeys(interpretRecord.result, [
-    "hiddenStates",
-    "rawHiddenStates",
-    "attentionTensor",
-    "attentionWeights",
-    "stateDict",
-    "parameters",
-    "gradients",
-    "mlpActivations"
-  ]);
-  const interpretVerification = await postJson(`${baseUrl}/api/verify`, {
-    receipt: interpretRecord.receipt
-  });
-  if (!interpretVerification.verification?.ok) {
-    throw new Error(
-      `Interpretability receipt verification failed: ${JSON.stringify(interpretVerification)}`
+    const list = await getJson<{ registryHash: string; experiments: Array<{ id: string; kind: string; itemCount: number }> }>(
+      `${base}/api/experiments`
     );
-  }
-  const interpretAudit = await expectOk(
-    `${baseUrl}/api/receipts/${interpretRecord.id}/audit`
-  );
-  if (!interpretAudit.audit?.ok) {
-    throw new Error(`Interpretability receipt audit failed: ${JSON.stringify(interpretAudit)}`);
-  }
-  const interpretDryRun = await postJson(
-    `${baseUrl}/api/receipts/${interpretRecord.id}/commit?dryRun=1`,
-    {}
-  );
-  if (interpretDryRun.solanaCommitment?.status !== "dry-run") {
-    throw new Error("Interpretability dry-run Solana commitment did not return dry-run status");
-  }
+    assert(list.experiments.length > 0, "empty registry");
+    const candidates = list.experiments.filter((e) => e.kind === "expected-token");
+    const chosen = process.env.SMOKE_EXPERIMENT_ID
+      ? list.experiments.find((e) => e.id === process.env.SMOKE_EXPERIMENT_ID)
+      : (candidates.length ? candidates : list.experiments).sort((a, b) => a.itemCount - b.itemCount)[0];
+    assert(chosen, "no experiment to run");
+    console.log(`[smoke] registry ${list.registryHash.slice(0, 16)}… running ${chosen.id}`);
 
-  // Auditor suite endpoints: aggregate-only results with suite receipts.
-  const auditSuite = await postJson(`${baseUrl}/api/audit-suite`, {
-    suite: {
-      name: "smoke capital facts",
-      kind: "expected-token",
-      items: [
-        { prompt: "The capital of France is", expectedToken: " Paris" },
-        { prompt: "The capital of Germany is", expectedToken: " Berlin" },
-        { prompt: "The capital of Italy is", expectedToken: " Rome" },
-        { prompt: "The capital of Spain is", expectedToken: " Madrid" },
-        { prompt: "The capital of Japan is", expectedToken: " Tokyo" },
-        { prompt: "The capital of Russia is", expectedToken: " Moscow" },
-        { prompt: "The capital of England is", expectedToken: " London" },
-        { prompt: "The capital of Egypt is", expectedToken: " Cairo" }
-      ]
+    const detail = await getJson<{ experiment: { id: string; items: unknown[] } }>(`${base}/api/experiments/${chosen.id}`);
+    assert(detail.experiment.items.length === chosen.itemCount, "detail item count mismatch");
+
+    // Single-flight: two concurrent runs -> one 200, one 409.
+    const [first, second] = await Promise.all([
+      fetch(`${base}/api/experiments/${chosen.id}/run`, { method: "POST" }),
+      fetch(`${base}/api/experiments/${chosen.id}/run`, { method: "POST" })
+    ]);
+    const statuses = [first.status, second.status].sort();
+    assert(statuses[0] === 200 && statuses[1] === 409, `expected [200,409], got [${statuses}]`);
+    const runResponse = (await (first.status === 200 ? first : second).json()) as {
+      record: PublicExperimentRecord;
+      verification: RecordVerification;
+    };
+    const record = runResponse.record;
+    assert(runResponse.verification.ok, "server self-verification failed");
+    assertNoForbiddenKeys(record, "record");
+    assert(/^[0-9a-f]{64}$/.test(record.receipt.payload.attestation.nonce), "nonce is not 64 hex");
+    assert(
+      record.receipt.payload.disclosure.leaves.length === record.receipt.payload.disclosure.count,
+      "disclosed leaf count mismatch"
+    );
+    console.log(
+      `[smoke] run ${record.id} root ${record.receipt.payload.results.resultsRoot.slice(0, 16)}… disclosed ${record.receipt.payload.disclosure.indices.join(",")}`
+    );
+
+    const verify = await postJson<{ verification: RecordVerification }>(`${base}/api/verify`, { record });
+    assertAllPass(verify.verification, "verify");
+
+    // Tamper 1: mutate a disclosed leaf -> its leaf hash check must fail.
+    const tampered = structuredClone(record);
+    const leaf = tampered.receipt.payload.disclosure.leaves[0];
+    const numericKey = Object.keys(leaf.leaf).find((k) => typeof leaf.leaf[k] === "number" && k !== "index");
+    assert(numericKey, "no numeric leaf field to tamper");
+    (leaf.leaf as Record<string, unknown>)[numericKey] = (leaf.leaf[numericKey] as number) + 1;
+    const tamperedVerify = await postJson<{ verification: RecordVerification }>(`${base}/api/verify`, { record: tampered });
+    assert(!tamperedVerify.verification.ok, "tampered leaf verified");
+    assert(
+      tamperedVerify.verification.checks.some((c) => c.name.startsWith("disclosed-leaf-hash") && c.status === "fail"),
+      "tampered leaf did not fail leaf-hash check"
+    );
+
+    // Tamper 2: mutate metrics -> digest/signature must fail.
+    const tampered2 = structuredClone(record);
+    (tampered2.receipt.payload.results.metrics as Record<string, unknown>).scored = 999;
+    const tamperedVerify2 = await postJson<{ verification: RecordVerification }>(`${base}/api/verify`, { record: tampered2 });
+    assert(
+      tamperedVerify2.verification.checks.some((c) => c.name === "receipt-digest" && c.status === "fail"),
+      "tampered metrics did not fail digest"
+    );
+    console.log("[smoke] tamper tests behave");
+
+    const audit = await getJson<{ ok: boolean; audit: { checks: Array<{ name: string; status: string; detail?: string }> } }>(
+      `${base}/api/receipts/${record.id}/audit?offline=1`
+    );
+    const failed = audit.audit.checks.filter((c) => c.status === "fail");
+    assert(audit.ok, `audit failed: ${failed.map((c) => `${c.name}(${c.detail})`).join(", ")}`);
+    for (const name of ["attestation-nonce", "evidence-nonce-match", "receipt-binds-evidence", "current-workload-match"]) {
+      assert(audit.audit.checks.some((c) => c.name === name && c.status === "pass"), `audit check ${name} did not pass`);
     }
-  });
-  const suiteRecord = auditSuite.record;
-  if (!suiteRecord?.result?.suite?.datasetHash || !suiteRecord?.receipt?.payload?.policyHash) {
-    throw new Error("Audit suite did not bind a dataset hash and leakage policy hash");
-  }
-  if (suiteRecord.result.metrics?.scored !== 8) {
-    throw new Error("Audit suite did not score all items");
-  }
-  assertNoForbiddenKeys(suiteRecord.result, [
-    "hiddenStates",
-    "rawHiddenStates",
-    "attentionTensor",
-    "perItemResults",
-    "stateDict",
-    "parameters",
-    "gradients"
-  ]);
-  const suiteVerification = await postJson(`${baseUrl}/api/verify`, {
-    receipt: suiteRecord.receipt
-  });
-  if (!suiteVerification.verification?.ok) {
-    throw new Error(`Suite receipt verification failed: ${JSON.stringify(suiteVerification)}`);
-  }
-  const suiteAudit = await expectOk(`${baseUrl}/api/receipts/${suiteRecord.id}/audit`);
-  if (!suiteAudit.audit?.ok) {
-    throw new Error(`Suite receipt audit failed: ${JSON.stringify(suiteAudit)}`);
-  }
-  const suiteDryRun = await postJson(
-    `${baseUrl}/api/receipts/${suiteRecord.id}/commit?dryRun=1`,
-    {}
-  );
-  if (suiteDryRun.solanaCommitment?.status !== "dry-run") {
-    throw new Error("Suite dry-run Solana commitment did not return dry-run status");
-  }
 
-  const patchSuite = await postJson(`${baseUrl}/api/patch-suite`, {
-    name: "smoke patch suite",
-    pairs: [
-      { cleanPrompt: "The capital of France is", corruptedPrompt: "The capital of Germany is", targetToken: " Paris" },
-      { cleanPrompt: "The capital of Italy is", corruptedPrompt: "The capital of Spain is", targetToken: " Rome" },
-      { cleanPrompt: "The capital of Japan is", corruptedPrompt: "The capital of China is", targetToken: " Tokyo" }
-    ]
-  });
-  if (!patchSuite.record?.result?.metrics?.bestLayer) {
-    throw new Error("Patch suite did not return aggregate layer scores");
-  }
+    const evidence = await getJson<{ summary: { nonce: string }; evidence: Record<string, unknown> }>(
+      `${base}/api/receipts/${record.id}/evidence`
+    );
+    assert(evidence.summary.nonce === record.receipt.payload.attestation.nonce, "evidence nonce mismatch");
+    assertNoForbiddenKeys(evidence.evidence, "evidence", ["rawToken", "textproto"]);
 
-  console.log(
-    JSON.stringify(
-      {
-        ok: true,
-        runId: record.id,
-        suiteRunId: suiteRecord.id,
-        suiteReceiptDigest: suiteRecord.receipt.digest,
-        suiteDatasetHash: suiteRecord.result.suite.datasetHash,
-        suitePolicyHash: suiteRecord.receipt.payload.policyHash,
-        patchSuiteBestLayer: patchSuite.record.result.metrics.bestLayer,
-        receiptDigest: record.receipt.digest,
-        teeEvidenceHash: record.receipt.payload.runner.teeEvidenceHash,
-        workloadHash: audit.audit.workloadHash,
-        dryRunMemoHash: dryRun.solanaCommitment.memoHash,
-        interpretRunId: interpretRecord.id,
-        interpretReceiptDigest: interpretRecord.receipt.digest,
-        interpretResultHash: interpretRecord.result.resultHash,
-        interpretDryRunMemoHash: interpretDryRun.solanaCommitment.memoHash,
-        generatedTokens: record.generation.tokenCount.generated
-      },
-      null,
-      2
-    )
-  );
-} finally {
-  server.close();
+    const commit = await postJson<{ solanaCommitment: { status: string; kind: string; commitmentPda?: string } }>(
+      `${base}/api/receipts/${record.id}/commit?dryRun=1`,
+      {}
+    );
+    assert(commit.solanaCommitment.status === "dry-run", "dry-run commit status");
+    assert(commit.solanaCommitment.kind === "anchor-program" && commit.solanaCommitment.commitmentPda, "dry-run pda");
+
+    if (process.env.SMOKE_SKIP_RPC !== "1") {
+      const chain = await getJson<{ ok: boolean; chain: { exists: boolean } }>(`${base}/api/receipts/${record.id}/chain`);
+      assert(chain.ok && chain.chain.exists === false, "chain read-back of an uncommitted run should be exists:false");
+    }
+
+    const receipts = await getJson<{ records: PublicExperimentRecord[] }>(`${base}/api/receipts`);
+    assert(receipts.records.some((r) => r.id === record.id), "record missing from listing");
+    const key = await getJson<{ key: { publicKeyFingerprint: string } }>(`${base}/api/runner-key`);
+    assert(key.key.publicKeyFingerprint === record.receipt.payload.runner.publicKeyFingerprint, "runner key mismatch");
+
+    console.log(
+      JSON.stringify(
+        {
+          ok: true,
+          runId: record.id,
+          experimentId: record.experimentId,
+          resultsRoot: record.receipt.payload.results.resultsRoot,
+          nonce: record.receipt.payload.attestation.nonce,
+          receiptDigest: record.receipt.digest,
+          workloadHash: record.receipt.payload.attestation.workloadHash,
+          runnerRestarts: getRunner().status().restarts,
+          elapsedMs: Date.now() - started
+        },
+        null,
+        2
+      )
+    );
+  } finally {
+    server.close();
+    await stopRunner();
+  }
 }
 
-async function expectOk(url: string): Promise<any> {
+async function getJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
-  const body = await response.json();
-  if (!response.ok || !body.ok) {
-    throw new Error(`${url} failed: ${JSON.stringify(body)}`);
+  const body = (await response.json()) as T & { ok?: boolean; error?: string };
+  if (!response.ok) {
+    throw new Error(`${url} -> ${response.status} ${body.error ?? ""}`);
   }
   return body;
 }
 
-async function postJson(url: string, body: unknown): Promise<any> {
+async function postJson<T>(url: string, payload: unknown): Promise<T> {
   const response = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(body)
+    body: JSON.stringify(payload)
   });
-  const payload = await response.json();
-  if (!response.ok || !payload.ok) {
-    throw new Error(`${url} failed: ${JSON.stringify(payload)}`);
+  const body = (await response.json()) as T & { ok?: boolean; error?: string };
+  if (!response.ok) {
+    throw new Error(`${url} -> ${response.status} ${body.error ?? ""}`);
   }
-  return payload;
+  return body;
 }
 
-function assertNoForbiddenKeys(value: unknown, forbidden: string[]): void {
-  const keys = new Set(forbidden);
-  const stack = [value];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (!current || typeof current !== "object") {
-      continue;
-    }
-    if (Array.isArray(current)) {
-      stack.push(...current);
-      continue;
-    }
-    for (const [key, child] of Object.entries(current)) {
-      if (keys.has(key)) {
-        throw new Error(`Interpretability result exposed forbidden field: ${key}`);
+function assert(condition: unknown, message: string): asserts condition {
+  if (!condition) {
+    throw new Error(`[smoke] ${message}`);
+  }
+}
+
+function assertAllPass(verification: RecordVerification, label: string): void {
+  const failed = verification.checks.filter((c) => c.status === "fail");
+  assert(verification.ok && failed.length === 0, `${label}: ${failed.map((c) => `${c.name}(${c.detail})`).join(", ")}`);
+}
+
+function assertNoForbiddenKeys(value: unknown, label: string, keys: string[] = FORBIDDEN_KEYS): void {
+  const flat = new Set<string>();
+  walk(value, "", flat);
+  for (const key of keys) {
+    for (const seen of flat) {
+      if (seen === key || seen.endsWith(`.${key}`) || seen.includes(`.${key}.`)) {
+        throw new Error(`[smoke] ${label} leaks forbidden key ${seen}`);
       }
-      stack.push(child);
     }
   }
 }
+
+function walk(value: unknown, prefix: string, out: Set<string>): void {
+  if (Array.isArray(value)) {
+    value.forEach((item) => walk(item, prefix, out));
+    return;
+  }
+  if (value && typeof value === "object") {
+    for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {
+      const full = prefix ? `${prefix}.${key}` : key;
+      out.add(full);
+      walk(inner, full, out);
+    }
+  }
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : error);
+  process.exit(1);
+});

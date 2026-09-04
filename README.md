@@ -1,210 +1,108 @@
-# Private Model Verifier
+# Committed Experiments over a Sealed Model
 
-Private Model Verifier is a public test harness for a private GPT-2-style model.
-Users submit prompts, a hidden PyTorch/Hugging Face GPT-2 runner generates text
-or redacted interpretability summaries, and the API returns signed receipts that
-bind prompt hashes, result hashes, model commitments, TEE evidence, and optional
-Solana devnet timestamps.
+A public registry of pre-committed interpretability and behaviour experiments
+runs inside a Google Confidential VM against a sealed
+[`google/gemma-3-1b-pt`](https://huggingface.co/google/gemma-3-1b-pt). Every
+per-item result is Merkle-committed, the root is bound into the hardware
+attestation nonce, aggregates and a seeded sample of opened items are signed,
+and the commitment can be written to a Solana program and read back.
 
-The demo is not a ZK proof system. The privacy claim comes from keeping model
-weights and receipt keys outside the public source tree and, in
-production-style deployments, running the API in a hardware-backed TEE such as a
-Google Confidential VM.
+Nobody types prompts. Nobody sees the weights. Anyone can recompute every hash
+in the browser.
+
+Live: https://modelsintees.mcgee.cat
 
 ## What Runs
 
-- Frontend: Vite + React verifier demo
-- API: Express + TypeScript
-- Model runner: GPT-2 causal language model
-- Interpretability lab: logit-lens summaries, attention aggregates, and
-  layer-level activation patching scores
-- Auditor lab: behavior eval suites, linear probes, activation-patch suites,
-  and SAE feature reports over committed datasets, aggregate-only
-- Receipt protocol: canonical JSON + Ed25519 signatures
-- TEE evidence: Google Confidential VM attestation token when available
-- Chain commit: Solana devnet Anchor program, with Memo fallback
+- **Registry**: `src/experiments/*.json`, six experiments (behaviour evals,
+  memorization, paired bias, linear probe, activation patching, Gemma Scope 2
+  SAE features). Adding or editing one changes `registryHash` and the workload
+  hash.
+- **Runner**: `src/model/tee_runner/`, a persistent Python worker that loads
+  the model once and speaks NDJSON to the API. Leaves are integers only
+  (`Bp`, `Milli`, `Centi` fixed point) so hashing is byte-identical across
+  Python and TypeScript.
+- **API**: `src/server/`, Express + TypeScript. Runs one experiment at a time,
+  derives the attestation nonce from the results, fetches the Confidential VM
+  token with it, signs the receipt (Ed25519 over canonical JSON), stores the
+  sealed leaves privately, and self-verifies before responding.
+- **Verifier**: `src/shared/`, one implementation of canonical JSON, RFC 6962
+  Merkle proofs, disclosure sampling, nonce derivation and Ed25519 that runs in
+  Node and in the browser.
+- **Frontend**: `src/web/`, Vite + React. Catalog, run, metrics, opened leaves
+  with proofs, and a check list computed client-side.
+- **Chain**: `programs/experiment_receipts/`, an Anchor program with a single
+  immutable `commit_experiment` instruction; the audit reads the PDA back.
 
-## Private Artifacts
-
-Do not commit runtime-generated private artifacts. They are ignored by
-`.gitignore`, `.npmignore`, and `.dockerignore`.
-
-```text
-private/
-target/deploy/*-keypair.json
-*.pem
-*.pt
-*.safetensors
-*.onnx
-.env
-```
-
-The app downloads/caches GPT-2 files, generates receipt signing keys, Solana
-devnet payer keys, and stored evidence under `private/`. Keep that directory
-local or on the protected VM only.
+See [`docs/TRUST_MODEL.md`](docs/TRUST_MODEL.md) for what is proved and what is not.
 
 ## Setup
 
 ```bash
 npm install
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
-npm run llm:test
-anchor build --ignore-keys
+python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+cp .env.example .env            # add HF_TOKEN (Gemma is gated: accept the licence on Hugging Face)
+npm run fetch:artifacts         # downloads the model + SAE into private/, prints both commitments
+npm run llm:test                # Python selftest: vectors, registry, commitments, one real run
+npm run registry:validate       # TypeScript reproduces the Python vectors and every dataset hash
 ```
 
-Copy `.env.example` to `.env` for local overrides. Do not commit `.env`.
-
-## Run Locally
+Run locally (`TEE_MODE=local-dev-sim`, no hardware token, every other check active):
 
 ```bash
-npm run dev
+npm run dev                     # API on :8787, Vite on :5173
+npm test                        # selftest + typecheck + registry + build + smoke
 ```
 
-Open `http://localhost:5173`.
+## API
 
-The API listens on `http://127.0.0.1:8787`.
+| Route | Purpose |
+|---|---|
+| `GET /api/health` | runner state, registry hash, current run |
+| `GET /api/model` | model + SAE commitments, architecture, runtime |
+| `GET /api/experiments` | registry summaries |
+| `GET /api/experiments/:id` | items + recent runs |
+| `POST /api/experiments/:id/run` | run inside the TEE (409 while busy) |
+| `GET /api/receipts`, `/:id` | public records (receipt, descriptive context, chain status) |
+| `GET /api/receipts/:id/audit` | full audit: verifier checks, evidence, Google token, chain read-back |
+| `GET /api/receipts/:id/chain` | decode the on-chain commitment and compare |
+| `POST /api/receipts/:id/commit` | write to the Solana program (`?dryRun=1` to simulate) |
+| `POST /api/verify` | browser-equivalent verification of a supplied record |
+| `GET /api/runner-key` | signer public key and fingerprint |
 
-## Test
+## Adding an experiment
+
+1. Add `src/experiments/<id>.json` (`schema: tee-ai-experiment/v1`, exact
+   params for its kind, single-token targets).
+2. `npm run registry:validate` (the Gemma tokenizer must agree that targets are
+   one token).
+3. Redeploy: the registry hash and workload hash change.
+
+## Solana program
+
+Program id `Bvvhk5LPD9STKEpK2hFEfdTumf5qGTSJfFyn5W97XiuR` on devnet, upgraded
+in place. To rebuild and upgrade:
 
 ```bash
-npm test
-npm run chain:test
+anchor build
+anchor program upgrade target/deploy/experiment_receipts.so \
+  --program-id Bvvhk5LPD9STKEpK2hFEfdTumf5qGTSJfFyn5W97XiuR \
+  --provider.cluster devnet --provider.wallet ~/.config/solana/id.json
+npm run chain:test              # real commit + read-back of the newest run
 ```
 
-`npm test` runs the model self-test, TypeScript checks, production frontend
-build, and API smoke test. The smoke test covers generation receipts,
-interpretability receipts, redaction flags, audit checks, and dry-run Solana
-commits. `chain:test` submits a live devnet receipt. `llm:test` downloads/loads
-the configured GPT-2 model and prints its private model commitment.
+Do not run `anchor keys sync`; it would repoint `declare_id!` at a local keypair.
 
-## Vercel Frontend
+## Private artifacts
 
-Vercel should deploy the frontend only. The TEE/API/model runner should remain
-on infrastructure that can access the private model directory and TEE device.
+Never commit runtime-generated private state. `private/` (model, SAE, signing
+key, records, sealed leaves, Solana payer), `*.pem`, `*.safetensors`, `.env`
+are ignored. `public/runner-key.json` is the one key file that is meant to be
+committed: it pins the VM's signing key for the frontend (`npm run key:export`
+on the VM).
 
-Set this Vercel environment variable when the API is hosted elsewhere:
+## Deployment
 
-```text
-TEE_API_ORIGIN=https://your-api-host.example
-```
-
-The Vercel project includes a same-origin `/api/*` proxy that forwards requests
-to `TEE_API_ORIGIN`. This avoids browser mixed-content issues when the frontend
-is served over HTTPS. For purely local development, leave `VITE_API_BASE_URL`
-empty and Vite will proxy `/api` to `http://127.0.0.1:8787`.
-
-## API Endpoints
-
-```text
-GET  /api/health
-GET  /api/llm
-GET  /api/tee/evidence
-POST /api/generate
-POST /api/interpret
-POST /api/audit-suite
-POST /api/probe
-POST /api/patch-suite
-POST /api/features
-POST /api/verify
-POST /api/audit
-GET  /api/solana/status
-GET  /api/receipts/:id
-GET  /api/receipts/:id/evidence
-GET  /api/receipts/:id/audit
-POST /api/receipts/:id/commit
-```
-
-Production defaults are conservative:
-
-- `ALLOW_RAW_TEE_EVIDENCE=0` redacts raw attestation tokens/reports from public
-  responses.
-- `ALLOW_PUBLIC_RECEIPT_LISTING=0` prevents listing all stored receipts.
-
-Set an override to `1` only when you explicitly want that behavior.
-
-## Interpretability Redaction
-
-`POST /api/interpret` supports two public experiments:
-
-- Lens mode returns per-layer top-k next-token predictions, target-token ranks,
-  target probabilities, and final-token attention focus aggregates.
-- Patch mode additionally compares a clean prompt to a corrupted prompt and
-  returns per-layer target-token recovery scores.
-
-The endpoint does not return model weights, raw hidden-state vectors, raw
-attention tensors, MLP activations, projection matrices, or gradients. The
-receipt signs a hash of the redacted result so users can discuss and reproduce
-the public artifact without receiving the private internals.
-
-## Auditor Lab
-
-The Auditor lab view runs suite experiments against the private model and
-returns aggregate-only results under a capped-detail leakage policy
-(coarsened numbers, top-k capped at 3, no per-item results, minimum suite
-sizes). Each suite receipt binds dataset hash + model commitment + result
-hash + leakage policy hash + TEE evidence hash, supporting the claim "model X
-scored Y on committed dataset Z under policy P" without exposing weights.
-
-- `POST /api/audit-suite`: expected-token accuracy, memorization checks, or
-  paired-bias gaps over 8-64 items.
-- `POST /api/probe`: trains a linear probe per layer on 24-200 labeled texts
-  inside the runner; returns held-out accuracies only.
-- `POST /api/patch-suite`: activation patching over 3-12 clean/corrupted
-  pairs; returns mean and spread of recovery per layer.
-- `POST /api/features`: sparse-autoencoder feature firing rates over up to 16
-  prompts. Train the demo dictionary once with `npm run train:sae` (artifacts
-  land in `private/sae/`).
-
-See `docs/TRUST_MODEL.md` for the leakage policy rationale.
-
-## Solana Devnet
-
-The default Anchor program id is configured in `Anchor.toml`,
-`programs/private_gpt_receipts/src/lib.rs`, and
-`PRIVATE_GPT_RECEIPT_PROGRAM_ID`.
-Override it when deploying your own program.
-
-The server creates a devnet payer at:
-
-```text
-private/solana/devnet-keypair.json
-```
-
-Fund the payer manually if the faucet is rate-limited.
-
-## Trust Model
-
-The public can verify receipt signatures, payload hashes, model commitments,
-TEE evidence hashes, workload hashes, and Solana timestamp transactions. The
-public cannot directly inspect private weights. Stronger production deployments
-should generate and seal the receipt key inside a measured workload and bind the
-exact workload image to the TEE attestation policy.
-
-See [docs/TRUST_MODEL.md](docs/TRUST_MODEL.md) and
-[docs/GCP_CONFIDENTIAL_VM.md](docs/GCP_CONFIDENTIAL_VM.md).
-
-## License
-
-MIT License
-
-Copyright (c) 2026 Private Model Verifier
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+The API runs on a Google Confidential VM (see
+[`docs/GCP_CONFIDENTIAL_VM.md`](docs/GCP_CONFIDENTIAL_VM.md)); the frontend is
+on Vercel and proxies `/api/*` to the VM (`TEE_API_ORIGIN`).

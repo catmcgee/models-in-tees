@@ -1,109 +1,101 @@
+export type {
+  AuditCheck,
+  ChainReadback,
+  DisclosedLeaf,
+  ExperimentDetail,
+  ExperimentKind,
+  ExperimentReceiptPayload,
+  ExperimentSummary,
+  MerkleProofStep,
+  ModelDescriptor,
+  PublicExperimentRecord,
+  RecordVerification,
+  SaeDescriptor,
+  SignedExperimentReceipt,
+  SolanaCommitment,
+  TeeEvidenceSummary
+} from "../shared/receiptTypes.js";
+import type {
+  AuditCheck,
+  ExperimentKind,
+  PublicExperimentRecord,
+  SaeDescriptor
+} from "../shared/receiptTypes.js";
+
 export interface ModelInfo {
-  architecture: Record<string, unknown>;
+  modelId: string;
   commitment: string;
-  weights_path: string;
-  weights_public: boolean;
-  meta: Record<string, unknown>;
+  weightsPublic: false;
+  architecture: Record<string, unknown>;
+  runtime: Record<string, unknown>;
+  files: Array<{ path: string; sizeBytes: number; sha256: string }>;
+  sae: SaeDescriptor | null;
+  saeError?: string;
 }
 
-export interface GenerationResult {
-  ok: true;
-  model: ModelInfo;
-  promptHash: string;
-  output: string;
-  outputHash: string;
-  latencyMs: number;
-  tokenCount: {
-    prompt: number;
-    generated: number;
-  };
-  params: {
-    maxNewTokens: number;
-    temperature: number;
-    topP: number;
-  };
+export interface RegistryExperiment {
+  id: string;
+  kind: ExperimentKind;
+  title: string;
+  description: string;
+  params: Record<string, unknown>;
+  items: Array<Record<string, unknown>>;
+  itemCount: number;
+  datasetHash: string;
+  experimentHash: string;
 }
 
-export interface LensToken {
-  rank: number;
-  token: string;
-  tokenId: number;
-  probability: number;
+export interface Registry {
+  schema: string;
+  registryHash: string;
+  experiments: RegistryExperiment[];
 }
 
-export interface LensLayer {
-  layer: number;
-  label: string;
-  topTokens: LensToken[];
-  target: {
-    rank: number;
-    probability: number;
-    logit: number;
+/** What the Python worker returns for run-experiment. */
+export interface RunExperimentResult {
+  schema: "tee-ai-experiment-result/v1";
+  experiment: {
+    id: string;
+    kind: ExperimentKind;
+    title: string;
+    params: Record<string, unknown>;
+    itemCount: number;
+    datasetHash: string;
+    experimentHash: string;
+    registryHash: string;
   };
-}
-
-export interface AttentionHeadSummary {
-  head: number;
-  focusPosition: number;
-  focusToken: string;
-  maxAttention: number;
-  entropy: number;
-}
-
-export interface AttentionLayerSummary {
-  layer: number;
-  meanEntropy: number;
-  focusedHeads: AttentionHeadSummary[];
-}
-
-export interface PatchLayerScore {
-  layer: number;
-  targetLogProb: number;
-  recovery: number;
-  clippedRecovery: number;
-}
-
-export interface InterpretabilityResult {
-  ok: true;
-  model: ModelInfo;
-  promptHash: string;
-  corruptedPromptHash?: string | null;
-  target: {
-    token: string;
-    tokenId: number;
-    source: "user" | "clean-final-argmax";
-    cleanLogProb: number;
+  model: {
+    commitment: string;
+    modelId: string;
+    architecture: Record<string, unknown>;
+    runtime: Record<string, unknown>;
   };
-  lens: {
-    topK: number;
-    position: number;
-    layers: LensLayer[];
+  sae: SaeDescriptor | null;
+  policy: Record<string, unknown>;
+  policyHash: string;
+  results: {
+    resultsRoot: string;
+    leafCount: number;
+    leafSchema: string;
+    merkleScheme: string;
+    metrics: Record<string, unknown>;
+    metricsHash: string;
   };
-  attention: {
-    available: boolean;
-    position?: number;
-    tokenCount?: number;
-    layers: AttentionLayerSummary[];
+  disclosure: {
+    scheme: string;
+    seed: string;
+    count: number;
+    indices: number[];
+    leaves: Array<{
+      index: number;
+      leaf: Record<string, unknown>;
+      leafHash: string;
+      proof: Array<{ hash: string; side: "left" | "right" }>;
+    }>;
   };
-  patching?: {
-    available: boolean;
-    cleanLogProb: number;
-    corruptedLogProb: number;
-    layers: PatchLayerScore[];
-  } | null;
-  params: {
-    topK: number;
-    maxPromptTokens: number;
-    rawActivationsReturned: false;
-    rawAttentionReturned: false;
-    weightsReturned: false;
-  };
-  redaction: {
-    exposes: string[];
-    withholds: string[];
-  };
-  latencyMs: number;
-  resultHash: string;
+  sealed: { leaves: Array<Record<string, unknown>>; leafHashes: string[] };
+  descriptive: Record<string, unknown>;
+  timing: { totalMs: number; forwardPasses: number };
 }
 
 export interface WorkloadMeasurement {
@@ -119,33 +111,14 @@ export interface WorkloadMeasurement {
     programId: string;
     solanaRpcUrl: string;
     llmModelId: string;
+    saeRepo: string;
+    saeSubfolder: string;
     teeMode: string;
     teeProvider: string;
     node: string;
     platform: string;
     arch: string;
   };
-}
-
-export interface TeeEvidenceSummary {
-  schema: "tee-evidence/v1";
-  evidenceHash: string;
-  workloadHash?: string;
-  source: string;
-  collectedAt: string;
-  nonce: string;
-  attestationStatus: string;
-  tokenHash?: string;
-  reportHash?: string;
-  subject?: string;
-  issuer?: string;
-  hardwareModel?: string;
-  secureBoot?: boolean;
-  projectId?: string;
-  zone?: string;
-  instanceName?: string;
-  instanceId?: string;
-  errors?: string[];
 }
 
 export interface TeeEvidence {
@@ -189,176 +162,30 @@ export interface TeeEvidence {
   evidenceHash: string;
 }
 
-export interface ReceiptPayload {
-  schema: "private-gpt2-receipt/v1";
+/** Stored server-side; never returned as-is. */
+export interface ExperimentRecord extends PublicExperimentRecord {
+  teeEvidence: TeeEvidence;
+  metricsHash: string;
+}
+
+export type StoredRecord = ExperimentRecord;
+
+export interface SealedRecord {
   runId: string;
-  issuedAt: string;
-  promptHash: string;
-  outputHash: string;
-  paramsHash: string;
-  model: {
-    commitment: string;
-    architecture: Record<string, unknown>;
-    weightsPublic: false;
-  };
-  generation: {
-    latencyMs: number;
-    tokenCount: {
-      prompt: number;
-      generated: number;
-    };
-    params: GenerationResult["params"];
-  };
-  runner: {
-    teeMode: string;
-    teeProvider: string;
-    publicKeyPem: string;
-    publicKeyFingerprint: string;
-    teeEvidenceHash?: string;
-    teeEvidence?: TeeEvidenceSummary;
-  };
-  solana?: SolanaCommitment | null;
-}
-
-export interface InterpretabilityReceiptPayload {
-  schema: "private-gpt2-interpretability-receipt/v1";
-  runId: string;
-  issuedAt: string;
-  promptHash: string;
-  corruptedPromptHash?: string | null;
-  targetToken: {
-    token: string;
-    tokenId: number;
-    source: "user" | "clean-final-argmax";
-  };
-  resultHash: string;
-  model: {
-    commitment: string;
-    architecture: Record<string, unknown>;
-    weightsPublic: false;
-  };
-  experiment: {
-    kind: "logit-lens-and-activation-patching";
-    params: InterpretabilityResult["params"];
-    redaction: InterpretabilityResult["redaction"];
-  };
-  runner: ReceiptPayload["runner"];
-}
-
-export type SuiteExperiment = "audit-suite" | "probe" | "patch-suite" | "sae-features";
-
-export interface SuiteResult {
-  ok: true;
-  available?: boolean;
-  hint?: string;
-  model: ModelInfo;
-  suite: {
-    kind: string;
-    name: string;
-    itemCount: number;
-    datasetHash: string;
-  };
-  metrics: Record<string, unknown>;
-  policy: Record<string, unknown>;
-  params: Record<string, unknown>;
-  latencyMs: number;
-  resultHash: string;
-}
-
-export interface SuiteReceiptPayload {
-  schema: "private-gpt2-suite-receipt/v1";
-  runId: string;
-  issuedAt: string;
-  experiment: SuiteExperiment;
-  suite: SuiteResult["suite"];
-  resultHash: string;
-  policyHash: string;
-  model: {
-    commitment: string;
-    architecture: Record<string, unknown>;
-    weightsPublic: false;
-  };
-  runner: ReceiptPayload["runner"];
-}
-
-export type SignedPayloadPayload =
-  | ReceiptPayload
-  | InterpretabilityReceiptPayload
-  | SuiteReceiptPayload;
-
-export interface SignedPayload<TPayload extends SignedPayloadPayload = SignedPayloadPayload> {
-  payload: TPayload;
-  signature: string;
-  digest: string;
-  algorithm: "Ed25519";
-}
-
-export type SignedReceipt = SignedPayload<ReceiptPayload>;
-export type SignedInterpretabilityReceipt = SignedPayload<InterpretabilityReceiptPayload>;
-export type SignedSuiteReceipt = SignedPayload<SuiteReceiptPayload>;
-
-export interface GenerationRecord {
-  kind: "generation";
-  id: string;
-  prompt: string;
-  generation: GenerationResult;
-  receipt: SignedReceipt;
-  teeEvidence?: TeeEvidence | null;
-  solanaCommitment?: SolanaCommitment | null;
-  createdAt: string;
-}
-
-export interface InterpretabilityRecord {
-  kind: "interpretability";
-  id: string;
-  prompt: string;
-  corruptedPrompt?: string;
-  targetToken?: string;
-  result: InterpretabilityResult;
-  receipt: SignedInterpretabilityReceipt;
-  teeEvidence?: TeeEvidence | null;
-  solanaCommitment?: SolanaCommitment | null;
-  createdAt: string;
-}
-
-export interface SuiteRecord {
-  kind: "suite";
-  id: string;
-  experiment: SuiteExperiment;
-  result: SuiteResult;
-  receipt: SignedSuiteReceipt;
-  teeEvidence?: TeeEvidence | null;
-  solanaCommitment?: SolanaCommitment | null;
-  createdAt: string;
-}
-
-export type StoredRecord = GenerationRecord | InterpretabilityRecord | SuiteRecord;
-
-export interface AuditCheck {
-  name: string;
-  status: "pass" | "fail" | "skip";
-  detail?: string;
+  experimentId: string;
+  resultsRoot: string;
+  leafCount: number;
+  leafSchema: string;
+  leaves: Array<Record<string, unknown>>;
+  leafHashes: string[];
 }
 
 export interface ReceiptAudit {
   ok: boolean;
   receiptDigest?: string;
+  resultsRoot?: string;
+  nonce?: string;
   evidenceHash?: string;
   workloadHash?: string;
   checks: AuditCheck[];
-}
-
-export interface SolanaCommitment {
-  status: "confirmed" | "dry-run" | "failed";
-  network: "devnet";
-  rpcUrl: string;
-  payer: string;
-  kind?: "anchor-program" | "memo";
-  programId?: string;
-  sessionPda?: string;
-  signature?: string;
-  explorerUrl?: string;
-  memo: string;
-  memoHash: string;
-  error?: string;
 }

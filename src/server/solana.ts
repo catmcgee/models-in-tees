@@ -1,50 +1,24 @@
 import {
-  Connection,
-  Keypair,
   LAMPORTS_PER_SOL,
   PublicKey,
   sendAndConfirmTransaction,
   Transaction,
   TransactionInstruction
 } from "@solana/web3.js";
-import fs from "node:fs";
-import path from "node:path";
-import { config, solanaDir } from "./config.js";
-import { sha256Hex } from "./canonical.js";
-import { commitReceiptToAnchorProgram } from "./anchorCommit.js";
-import type {
-  SignedInterpretabilityReceipt,
-  SignedPayload,
-  SignedReceipt,
-  SignedSuiteReceipt,
-  SolanaCommitment
-} from "./types.js";
+import { config } from "./config.js";
+import { sha256HexSync } from "./canonical.js";
+import { commitExperimentToAnchorProgram, commitFields } from "./anchorCommit.js";
+import { ensurePayerHasFunds, getBaseConnection, loadOrCreateDevnetPayer } from "./solanaPayer.js";
+import type { SignedExperimentReceipt, SolanaCommitment } from "./types.js";
 
-const MEMO_PROGRAM_ID = new PublicKey(
-  "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
-);
-const payerPath = path.join(solanaDir, "devnet-keypair.json");
+const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
 
-export function getBaseConnection(): Connection {
-  return new Connection(config.solanaRpcUrl, "confirmed");
-}
-
-export function loadOrCreateDevnetPayer(): Keypair {
-  fs.mkdirSync(solanaDir, { recursive: true });
-  if (fs.existsSync(payerPath)) {
-    const secret = JSON.parse(fs.readFileSync(payerPath, "utf-8")) as number[];
-    return Keypair.fromSecretKey(Uint8Array.from(secret));
-  }
-  const payer = Keypair.generate();
-  fs.writeFileSync(payerPath, JSON.stringify([...payer.secretKey]), {
-    mode: 0o600
-  });
-  return payer;
-}
+export { getBaseConnection, loadOrCreateDevnetPayer } from "./solanaPayer.js";
 
 export async function getSolanaStatus(): Promise<{
   network: "devnet";
   rpcUrl: string;
+  programId: string;
   payer: string;
   balanceSol: number;
   blockhash: string;
@@ -58,41 +32,42 @@ export async function getSolanaStatus(): Promise<{
   return {
     network: "devnet",
     rpcUrl: config.solanaRpcUrl,
+    programId: config.experimentProgramId,
     payer: payer.publicKey.toBase58(),
     balanceSol: balanceLamports / LAMPORTS_PER_SOL,
     blockhash: blockhash.blockhash
   };
 }
 
+/** Anchor program first; Memo only if the program commit fails outright. */
 export async function commitReceiptToDevnet(
-  receipt: SignedPayload,
+  receipt: SignedExperimentReceipt,
   dryRun = false
 ): Promise<SolanaCommitment> {
-  if (isGenerationReceipt(receipt)) {
-    const programCommitment = await commitReceiptToAnchorProgram(receipt, dryRun);
-    if (programCommitment.status !== "failed") {
-      return programCommitment;
-    }
+  const programCommitment = await commitExperimentToAnchorProgram(receipt, dryRun);
+  if (programCommitment.status !== "failed") {
+    return programCommitment;
   }
+  const memoCommitment = await commitMemo(receipt, dryRun);
+  return { ...memoCommitment, anchorError: programCommitment.error };
+}
 
+async function commitMemo(receipt: SignedExperimentReceipt, dryRun: boolean): Promise<SolanaCommitment> {
   const connection = getBaseConnection();
   const payer = loadOrCreateDevnetPayer();
-  const memoRecord = buildMemoRecord(receipt);
-  const memo = `TEEAI:${JSON.stringify(memoRecord)}`;
-  const memoHash = sha256Hex(memo);
-
+  const memo = `TEEAI:${JSON.stringify(buildMemoRecord(receipt))}`;
+  const memoHash = sha256HexSync(memo);
+  const base = {
+    network: "devnet" as const,
+    rpcUrl: config.solanaRpcUrl,
+    payer: payer.publicKey.toBase58(),
+    kind: "memo" as const,
+    memo,
+    memoHash
+  };
   if (dryRun || config.disableSolanaCommit) {
-    return {
-      status: "dry-run",
-      network: "devnet",
-      rpcUrl: config.solanaRpcUrl,
-      payer: payer.publicKey.toBase58(),
-      kind: "memo",
-      memo,
-      memoHash
-    };
+    return { status: "dry-run", ...base };
   }
-
   try {
     await ensurePayerHasFunds(connection, payer.publicKey);
     const transaction = new Transaction().add(
@@ -108,111 +83,22 @@ export async function commitReceiptToDevnet(
     });
     return {
       status: "confirmed",
-      network: "devnet",
-      rpcUrl: config.solanaRpcUrl,
-      payer: payer.publicKey.toBase58(),
-      kind: "memo",
+      ...base,
       signature,
-      explorerUrl: `https://explorer.solana.com/tx/${signature}?cluster=devnet`,
-      memo,
-      memoHash
+      explorerUrl: `https://explorer.solana.com/tx/${signature}?cluster=devnet`
     };
   } catch (error) {
-    return {
-      status: "failed",
-      network: "devnet",
-      rpcUrl: config.solanaRpcUrl,
-      payer: payer.publicKey.toBase58(),
-      kind: "memo",
-      memo,
-      memoHash,
-      error: error instanceof Error ? error.message : String(error)
-    };
+    return { status: "failed", ...base, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
-function isGenerationReceipt(receipt: SignedPayload): receipt is SignedReceipt {
-  return receipt.payload.schema === "private-gpt2-receipt/v1";
-}
-
-function isInterpretabilityReceipt(
-  receipt: SignedPayload
-): receipt is SignedInterpretabilityReceipt {
-  return receipt.payload.schema === "private-gpt2-interpretability-receipt/v1";
-}
-
-function isSuiteReceipt(receipt: SignedPayload): receipt is SignedSuiteReceipt {
-  return receipt.payload.schema === "private-gpt2-suite-receipt/v1";
-}
-
-function buildMemoRecord(receipt: SignedPayload): Record<string, unknown> {
-  if (isGenerationReceipt(receipt)) {
-    return {
-      schema: "tee-ai-devnet-memo/v1",
-      receiptSchema: receipt.payload.schema,
-      receiptDigest: receipt.digest,
-      modelCommitment: receipt.payload.model.commitment,
-      promptHash: receipt.payload.promptHash,
-      outputHash: receipt.payload.outputHash,
-      paramsHash: receipt.payload.paramsHash,
-      teeEvidenceHash: receipt.payload.runner.teeEvidenceHash || null,
-      issuedAt: receipt.payload.issuedAt
-    };
-  }
-
-  if (isSuiteReceipt(receipt)) {
-    return {
-      schema: "tee-ai-devnet-suite-memo/v1",
-      receiptSchema: receipt.payload.schema,
-      receiptDigest: receipt.digest,
-      modelCommitment: receipt.payload.model.commitment,
-      experiment: receipt.payload.experiment,
-      suiteKind: receipt.payload.suite.kind,
-      datasetHash: receipt.payload.suite.datasetHash,
-      itemCount: receipt.payload.suite.itemCount,
-      resultHash: receipt.payload.resultHash,
-      policyHash: receipt.payload.policyHash,
-      teeEvidenceHash: receipt.payload.runner.teeEvidenceHash || null,
-      issuedAt: receipt.payload.issuedAt
-    };
-  }
-
-  if (!isInterpretabilityReceipt(receipt)) {
-    throw new Error(`Unsupported receipt schema: ${receipt.payload.schema}`);
-  }
-
+function buildMemoRecord(receipt: SignedExperimentReceipt): Record<string, unknown> {
   return {
-    schema: "tee-ai-devnet-interpretability-memo/v1",
+    schema: "tee-ai-devnet-experiment-memo/v1",
     receiptSchema: receipt.payload.schema,
-    receiptDigest: receipt.digest,
-    modelCommitment: receipt.payload.model.commitment,
-    promptHash: receipt.payload.promptHash,
-    corruptedPromptHash: receipt.payload.corruptedPromptHash || null,
-    targetTokenId: receipt.payload.targetToken.tokenId,
-    resultHash: receipt.payload.resultHash,
-    teeEvidenceHash: receipt.payload.runner.teeEvidenceHash || null,
+    experimentId: receipt.payload.experiment.id,
+    registryHash: receipt.payload.experiment.registryHash,
+    ...commitFields(receipt),
     issuedAt: receipt.payload.issuedAt
   };
-}
-
-export async function ensurePayerHasFunds(
-  connection: Connection,
-  payer: PublicKey
-): Promise<void> {
-  const balance = await connection.getBalance(payer, "confirmed");
-  if (balance > 0.01 * LAMPORTS_PER_SOL) {
-    return;
-  }
-  const airdropSignature = await connection.requestAirdrop(
-    payer,
-    0.05 * LAMPORTS_PER_SOL
-  );
-  const latest = await connection.getLatestBlockhash("confirmed");
-  await connection.confirmTransaction(
-    {
-      signature: airdropSignature,
-      ...latest
-    },
-    "confirmed"
-  );
 }

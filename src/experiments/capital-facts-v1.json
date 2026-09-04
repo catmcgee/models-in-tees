@@ -1,0 +1,108 @@
+{
+  "schema": "tee-ai-experiment/v1",
+  "id": "capital-facts-v1",
+  "kind": "expected-token",
+  "title": "World capital facts",
+  "description": "Does the sealed model answer 'What is the capital of X?' with the right city as its next token? Scores rank and probability of the expected city over 24 countries.",
+  "params": {
+    "maxPromptTokens": 32
+  },
+  "items": [
+    {
+      "prompt": "Question: What is the capital of France?\nAnswer: The capital of France is",
+      "expectedToken": " Paris"
+    },
+    {
+      "prompt": "Question: What is the capital of Germany?\nAnswer: The capital of Germany is",
+      "expectedToken": " Berlin"
+    },
+    {
+      "prompt": "Question: What is the capital of Italy?\nAnswer: The capital of Italy is",
+      "expectedToken": " Rome"
+    },
+    {
+      "prompt": "Question: What is the capital of Spain?\nAnswer: The capital of Spain is",
+      "expectedToken": " Madrid"
+    },
+    {
+      "prompt": "Question: What is the capital of Japan?\nAnswer: The capital of Japan is",
+      "expectedToken": " Tokyo"
+    },
+    {
+      "prompt": "Question: What is the capital of Russia?\nAnswer: The capital of Russia is",
+      "expectedToken": " Moscow"
+    },
+    {
+      "prompt": "Question: What is the capital of England?\nAnswer: The capital of England is",
+      "expectedToken": " London"
+    },
+    {
+      "prompt": "Question: What is the capital of Egypt?\nAnswer: The capital of Egypt is",
+      "expectedToken": " Cairo"
+    },
+    {
+      "prompt": "Question: What is the capital of Greece?\nAnswer: The capital of Greece is",
+      "expectedToken": " Athens"
+    },
+    {
+      "prompt": "Question: What is the capital of Poland?\nAnswer: The capital of Poland is",
+      "expectedToken": " Warsaw"
+    },
+    {
+      "prompt": "Question: What is the capital of Norway?\nAnswer: The capital of Norway is",
+      "expectedToken": " Oslo"
+    },
+    {
+      "prompt": "Question: What is the capital of Portugal?\nAnswer: The capital of Portugal is",
+      "expectedToken": " Lisbon"
+    },
+    {
+      "prompt": "Question: What is the capital of Canada?\nAnswer: The capital of Canada is",
+      "expectedToken": " Ottawa"
+    },
+    {
+      "prompt": "Question: What is the capital of Australia?\nAnswer: The capital of Australia is",
+      "expectedToken": " Canberra"
+    },
+    {
+      "prompt": "Question: What is the capital of China?\nAnswer: The capital of China is",
+      "expectedToken": " Beijing"
+    },
+    {
+      "prompt": "Question: What is the capital of Austria?\nAnswer: The capital of Austria is",
+      "expectedToken": " Vienna"
+    },
+    {
+      "prompt": "Question: What is the capital of Ireland?\nAnswer: The capital of Ireland is",
+      "expectedToken": " Dublin"
+    },
+    {
+      "prompt": "Question: What is the capital of Sweden?\nAnswer: The capital of Sweden is",
+      "expectedToken": " Stockholm"
+    },
+    {
+      "prompt": "Question: What is the capital of Finland?\nAnswer: The capital of Finland is",
+      "expectedToken": " Helsinki"
+    },
+    {
+      "prompt": "Question: What is the capital of Denmark?\nAnswer: The capital of Denmark is",
+      "expectedToken": " Copenhagen"
+    },
+    {
+      "prompt": "Question: What is the capital of Belgium?\nAnswer: The capital of Belgium is",
+      "expectedToken": " Brussels"
+    },
+    {
+      "prompt": "Question: What is the capital of Hungary?\nAnswer: The capital of Hungary is",
+      "expectedToken": " Budapest"
+    },
+    {
+      "prompt": "Question: What is the capital of Turkey?\nAnswer: The capital of Turkey is",
+      "expectedToken": " Ankara"
+    },
+    {
+      "prompt": "Question: What is the capital of Kenya?\nAnswer: The capital of Kenya is",
+      "expectedToken": " Nairobi"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 {
-  "name": "tee-ai-private-gpt2",
+  "name": "tee-ai-experiments",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
@@ -8,16 +8,19 @@
     "dev": "concurrently -n api,web -c cyan,green \"npm run dev:api\" \"npm run dev:web\"",
     "dev:api": "tsx src/server/index.ts",
     "dev:web": "vite --host 0.0.0.0",
+    "start": "node dist-server/src/server/index.js",
     "build": "npm run build:server && npm run build:frontend",
-    "build:server": "tsc -p tsconfig.server.json",
+    "build:server": "rm -rf dist-server && tsc -p tsconfig.server.json",
     "build:frontend": "vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json",
+    "fetch:artifacts": ".venv/bin/python scripts/fetch_artifacts.py",
     "llm:test": ".venv/bin/python src/model/model_runner.py selftest",
-    "train:sae": ".venv/bin/python scripts/train_sae.py",
+    "registry:validate": "tsx scripts/validateRegistry.ts",
     "api:test": "tsx scripts/smoke.ts",
+    "key:export": "tsx scripts/exportRunnerKey.ts",
     "audit:public": "tsx scripts/publicAudit.ts",
     "chain:test": "tsx scripts/devnetCommit.ts",
-    "test": "npm run llm:test && npm run typecheck && npm run build && npm run api:test"
+    "test": "npm run llm:test && npm run typecheck && npm run registry:validate && npm run build && npm run api:test"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",
@@ -27,7 +30,7 @@
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "zod": "^3.24.1"
+    "@noble/curves": "^1.9.7"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

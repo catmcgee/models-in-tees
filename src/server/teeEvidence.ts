@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import { promisify } from "node:util";
 import { config } from "./config.js";
-import { fromBase64url, sha256Hex } from "./canonical.js";
+import { fromBase64url, sha256HexSync } from "./canonical.js";
 import { getWorkloadMeasurement } from "./workload.js";
 import type { TeeEvidence, TeeEvidenceSummary } from "./types.js";
 
@@ -64,7 +64,7 @@ export async function getTeeEvidence(
 
   return {
     ...baseEvidence,
-    evidenceHash: sha256Hex(baseEvidence)
+    evidenceHash: sha256HexSync(baseEvidence)
   };
 }
 
@@ -184,7 +184,7 @@ async function collectGoogleClaimsToken(
       subject: stringClaim(decoded.claims.sub),
       issuedAt: numberClaim(decoded.claims.iat),
       expiresAt: numberClaim(decoded.claims.exp),
-      tokenHash: sha256Hex(rawToken),
+      tokenHash: sha256HexSync(rawToken),
       rawToken: includeRawToken ? rawToken : undefined,
       claims: decoded.claims,
       header: decoded.header
@@ -206,7 +206,7 @@ async function collectTpmReport(
       "--key",
       "gceAK",
       "--nonce",
-      sha256Hex(nonce),
+      sha256HexSync(nonce),
       "--format",
       "textproto"
     ]);
@@ -215,7 +215,7 @@ async function collectTpmReport(
       nonce,
       format: "textproto",
       sizeBytes: Buffer.byteLength(textproto),
-      reportHash: sha256Hex(textproto),
+      reportHash: sha256HexSync(textproto),
       textproto: includeTextproto ? textproto : undefined
     };
   } catch (error) {
@@ -315,7 +315,12 @@ function normalizeNonce(value?: string): string {
   if (!value) {
     return randomBytes(24).toString("hex");
   }
-  return value.replace(/[^a-zA-Z0-9._:-]/g, "").slice(0, 96) || randomBytes(24).toString("hex");
+  const normalized = value.replace(/[^a-zA-Z0-9._:-]/g, "").slice(0, 96);
+  if (normalized !== value) {
+    // A derived nonce must reach gotpm byte-for-byte or the binding is meaningless.
+    throw new Error("nonce contains characters gotpm would drop; use [a-zA-Z0-9._:-] up to 96 chars");
+  }
+  return normalized;
 }
 
 function isGcpConfigured(): boolean {

@@ -1,0 +1,43 @@
+{
+  "schema": "tee-ai-experiment/v1",
+  "id": "capital-patching-v1",
+  "kind": "activation-patching",
+  "title": "Country-to-capital activation patching",
+  "description": "Patches the clean prompt's final-position residual stream into the corrupted prompt, one layer at a time, and measures how much of the correct capital's log-probability each layer recovers.",
+  "params": {
+    "maxPromptTokens": 32,
+    "position": "final"
+  },
+  "items": [
+    {
+      "cleanPrompt": "Question: What is the capital of France?\nAnswer: The capital of France is",
+      "corruptedPrompt": "Question: What is the capital of Germany?\nAnswer: The capital of Germany is",
+      "targetToken": " Paris"
+    },
+    {
+      "cleanPrompt": "Question: What is the capital of Italy?\nAnswer: The capital of Italy is",
+      "corruptedPrompt": "Question: What is the capital of Spain?\nAnswer: The capital of Spain is",
+      "targetToken": " Rome"
+    },
+    {
+      "cleanPrompt": "Question: What is the capital of Japan?\nAnswer: The capital of Japan is",
+      "corruptedPrompt": "Question: What is the capital of China?\nAnswer: The capital of China is",
+      "targetToken": " Tokyo"
+    },
+    {
+      "cleanPrompt": "Question: What is the capital of Russia?\nAnswer: The capital of Russia is",
+      "corruptedPrompt": "Question: What is the capital of Poland?\nAnswer: The capital of Poland is",
+      "targetToken": " Moscow"
+    },
+    {
+      "cleanPrompt": "Question: What is the capital of Egypt?\nAnswer: The capital of Egypt is",
+      "corruptedPrompt": "Question: What is the capital of Kenya?\nAnswer: The capital of Kenya is",
+      "targetToken": " Cairo"
+    },
+    {
+      "cleanPrompt": "Question: What is the capital of Sweden?\nAnswer: The capital of Sweden is",
+      "corruptedPrompt": "Question: What is the capital of Norway?\nAnswer: The capital of Norway is",
+      "targetToken": " Stockholm"
+    }
+  ]
+}

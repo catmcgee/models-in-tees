@@ -1,0 +1,7 @@
+{
+  "schema": "tee-ai-runner-key/v1",
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAS3GZq/qp8lOmh6TyguIC6KaeIHHHWHPJ3cJP9JFbqgU=\n-----END PUBLIC KEY-----\n",
+  "publicKeyFingerprint": "841fa44f344e98ce3ced1b9f9e88784f1c4c8bbdfdb48d966f314540126c0053",
+  "exportedAt": "2026-09-04T18:05:49.710Z",
+  "note": "Ed25519 public key of the receipt signer on the Confidential VM. Fingerprint = sha256(SPKI DER)."
+}
