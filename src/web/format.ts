@@ -64,7 +64,7 @@ export function kindLabel(kind: ExperimentKind): string {
 }
 
 export function modelDisplayName(modelId?: string | null): string {
-  if (!modelId) return "sealed model";
+  if (!modelId) return "the model";
   const tail = modelId.split("/").pop() || modelId;
   return tail
     .replace(/[-_]+/g, " ")

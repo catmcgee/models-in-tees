@@ -173,35 +173,37 @@ function App() {
     <div className="app">
       <Topbar
         health={health}
-        subtitle={`${modelName} inside ${teeName} · every result Merkle-committed and attested · Solana devnet`}
+        subtitle={`${modelName} · ${teeName} · Solana devnet`}
         busy={refreshing}
         onRefresh={() => void refresh()}
       />
 
       <section className="panel hero">
         <div className="hero-copy">
-          <span className="eyebrow">Pre-committed experiments · sealed model</span>
+          <span className="eyebrow">What this is</span>
           <h1 className="headline">
-            Nobody types a prompt. Nobody sees the weights. <span className="accentword">Everyone can check the numbers.</span>
+            Six fixed experiments, run inside a confidential VM against {modelName}. The weights are not published.
           </h1>
           <p className="lede">
-            Six experiments are fixed in a public registry and run inside a Confidential VM against {modelName}. A run
-            commits every per-item result, and the internal activations it came from, to one Merkle root; that root is
-            fed into the hardware attestation and signed together with the aggregates and a seeded sample of opened
-            items. The chain on the right fills with real hashes as soon as a run exists, and your browser recomputes
-            all of it.
+            The experiments and their inputs are files in the public repository; the API only runs those. A run
+            produces one record per input item. Each record contains the item's result and a digest of the model's
+            residual stream at every layer for that item. All records are hashed into a Merkle tree. The root of that
+            tree is fed into the VM's hardware attestation as its nonce, then signed together with the aggregate
+            metrics, the leakage policy, and a sample of records chosen by a seed derived from the root. Only the
+            sample is returned; the other records stay on the VM. This page recomputes each hash from the returned data
+            rather than trusting the API's own verdict.
           </p>
           {error && <div className="error-strip">{error}</div>}
           {health && health.runner.state !== "ready" && (
             <div className="running-line">
               Runner is {health.runner.state}
-              {health.runner.lastError ? `: ${health.runner.lastError}` : ", loading the sealed model…"}
+              {health.runner.lastError ? `: ${health.runner.lastError}` : ". The model is being loaded."}
             </div>
           )}
         </div>
         <div className="hero-chain">
           <div className="chain-title">
-            {activeRecord ? `Binding chain for run ${shortRun(activeRecord.id)}` : "What one run binds together"}
+            {activeRecord ? `Hashes in run ${shortRun(activeRecord.id)}` : "Hashes produced by a run"}
           </div>
           <BindingChain
             record={activeRecord}
@@ -240,7 +242,7 @@ function App() {
           <section className="panel results">
             <div className="panel-head">
               <div>
-                <span className="eyebrow">{kindLabel(activeRecord.receipt.payload.experiment.kind)} · signed aggregates</span>
+                <span className="eyebrow">{kindLabel(activeRecord.receipt.payload.experiment.kind)} · aggregate metrics (signed)</span>
                 <div className="panel-title">{activeRecord.receipt.payload.experiment.title}</div>
               </div>
               <span className="pill-count">
@@ -279,8 +281,7 @@ function App() {
       />
 
       <div className="foot">
-        {modelName} stays sealed inside {teeName} · results and internals are committed, opened by seed, and readable on
-        Solana devnet
+        Source: github.com/catmcgee/models-in-tees. Model: {modelName}. Runtime: {teeName}. Chain: Solana devnet.
       </div>
     </div>
   );

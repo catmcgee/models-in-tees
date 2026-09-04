@@ -18,10 +18,10 @@ export function Catalog({
     <section className="panel catalog">
       <div className="panel-head">
         <div>
-          <span className="eyebrow">Committed registry</span>
+          <span className="eyebrow">Registry</span>
           <div className="panel-title">Experiments</div>
         </div>
-        <span className="pill-count" title="sha256 over every experiment file in src/experiments/">
+        <span className="pill-count" title="sha256 over the id and file hash of every experiment in src/experiments/">
           registry {shortHash(registryHash, 6)}
         </span>
       </div>

@@ -35,7 +35,7 @@ export function ExperimentPanel({
     return (
       <section className="panel experiment">
         <div className="empty">
-          <div className="empty-t">Loading the committed registry from the runner…</div>
+          <div className="empty-t">The registry has not loaded yet.</div>
         </div>
       </section>
     );
@@ -51,13 +51,13 @@ export function ExperimentPanel({
         </div>
         <button className="btn btn-dark" type="button" onClick={onRun} disabled={running || !!busyElsewhere}>
           {running ? <Loader2 className="spin" /> : <Play />}
-          <span>{running ? `Running… ${formatMs(elapsed)}` : busyElsewhere ? `Busy: ${busyElsewhere}` : "Run inside the TEE"}</span>
+          <span>{running ? `Running, ${formatMs(elapsed)}` : busyElsewhere ? `Another run is in progress: ${busyElsewhere}` : "Run"}</span>
         </button>
       </div>
       <p className="lede exp-lede">{experiment.description}</p>
       <div className="kv exp-kv">
         <div className="kv-row">
-          <div className="kv-k">Dataset hash ({experiment.itemCount} committed items)</div>
+          <div className="kv-k">Dataset hash ({experiment.itemCount} items)</div>
           <div className="kv-v">{experiment.datasetHash}</div>
         </div>
         <div className="kv-row">
@@ -67,7 +67,7 @@ export function ExperimentPanel({
           </div>
         </div>
         <div className="kv-row">
-          <div className="kv-k">Fixed parameters</div>
+          <div className="kv-k">Parameters (fixed in the registry file)</div>
           <div className="policy-tags">
             {params.map(([key, value]) => (
               <span key={key}>
@@ -78,7 +78,7 @@ export function ExperimentPanel({
         </div>
       </div>
       <details className="items-list">
-        <summary>Show the {experiment.itemCount} committed items</summary>
+        <summary>The {experiment.itemCount} input items</summary>
         <ol>
           {experiment.items.map((item, index) => (
             <li key={index}>
@@ -89,7 +89,7 @@ export function ExperimentPanel({
       </details>
       {runs.length > 0 && (
         <div className="runs">
-          <div className="ev-col-title">Recent runs</div>
+          <div className="ev-col-title">Previous runs</div>
           <div className="runs-list">
             {runs.map((run) => (
               <button
@@ -101,7 +101,7 @@ export function ExperimentPanel({
               >
                 <span>{formatDate(run.createdAt)}</span>
                 <span className="kv-v">root {shortHash(run.receipt.payload.results.resultsRoot, 6)}</span>
-                <span className="run-chain">{run.solanaCommitment?.status === "confirmed" ? "on-chain" : "off-chain"}</span>
+                <span className="run-chain">{run.solanaCommitment?.status === "confirmed" ? "on Solana" : "not on Solana"}</span>
               </button>
             ))}
           </div>

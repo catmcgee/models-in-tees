@@ -31,8 +31,8 @@ export function EvidenceDrawer({
     <section className="drawer" data-open={open}>
       <button className="drawer-toggle" type="button" onClick={onToggle}>
         <div>
-          <div className="dt-title">Evidence drawer</div>
-          <div className="dt-sub">Model commitment, TEE evidence, Solana program, and receipt hashes</div>
+          <div className="dt-title">Details</div>
+          <div className="dt-sub">Model files, TEE evidence, Solana program, receipt hashes</div>
         </div>
         <span className="drawer-caret">
           <ChevronDown />
@@ -41,9 +41,9 @@ export function EvidenceDrawer({
       <div className="drawer-body">
         <div className="evidence-grid">
           <div>
-            <div className="ev-col-title">Sealed model</div>
+            <div className="ev-col-title">Model</div>
             <EvRow k="Model" v={model ? `${modelDisplayName(model.modelId)} (${model.modelId})` : "pending"} />
-            <EvRow k="Weights" v="private, committed by file hashes" />
+            <EvRow k="Weights" v="not published; committed by file hashes" />
             <EvRow k="Commitment" v={model?.commitment || health?.model?.commitment || "pending"} />
             <EvRow k="Architecture" v={architectureLine(model?.architecture)} />
             <EvRow
@@ -79,7 +79,7 @@ export function EvidenceDrawer({
               </div>
             ) : (
               <div className="ev-v" style={{ marginTop: 2 }}>
-                Run an experiment to create a signed receipt.
+                No run selected.
               </div>
             )}
           </div>

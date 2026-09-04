@@ -32,52 +32,52 @@ export function BindingChain({
   const links: Link[] = [
     {
       key: "weights",
-      label: "Sealed weights",
-      what: weightFiles ? `sha256 of ${weightFiles} model files, never served` : "sha256 of every model file, never served",
+      label: "Model commitment",
+      what: weightFiles ? `sha256 over the ${weightFiles} model files (weights, config, tokenizer)` : "sha256 over the model files (weights, config, tokenizer)",
       value: p?.model.commitment ?? modelCommitment ?? undefined,
       verified: p ? passed("receipt-signature") : undefined
     },
     {
       key: "registry",
-      label: "Committed experiment",
-      what: "dataset hash of the fixed items, inside the measured workload",
+      label: "Dataset hash",
+      what: "sha256 over the experiment's input items as they appear in the repository",
       value: p?.experiment.datasetHash ?? registryHash ?? undefined,
       verified: p ? passed("dataset-hash") : undefined
     },
     {
       key: "internals",
-      label: "Model internals",
+      label: "Residual-stream digests",
       what: p
-        ? `${p.results.leafCount} items × ${String(p.model.architecture.hiddenStateCount ?? 27)} residual-stream digests, sealed in each leaf`
-        : "one digest per layer per item of the actual residual stream, sealed",
+        ? `${p.results.leafCount} items × ${String(p.model.architecture.hiddenStateCount ?? 27)} hidden states, one sha256 each, stored inside the item's record`
+        : "one sha256 per hidden state per item, stored inside the item's record",
       value: p ? `${p.results.leafCount} leaves` : undefined,
       verified: p ? passed("leaf-count-matches-items") : undefined
     },
     {
       key: "root",
       label: "Merkle root",
-      what: "every per-item leaf, RFC 6962; opened items carry proofs",
+      what: "RFC 6962 tree over all item records; returned items come with inclusion proofs",
       value: p?.results.resultsRoot,
       verified: p ? passed("disclosure-indices") : undefined
     },
     {
       key: "nonce",
       label: "Attestation nonce",
-      what: "root ‖ dataset ‖ registry ‖ model ‖ policy ‖ signer, fed to the TEE",
+      what: "sha256 of root, dataset hash, registry hash, model commitment, policy hash and signer key; passed to the VM's attestation token",
       value: p?.attestation.nonce,
       verified: p ? passed("attestation-nonce") : undefined
     },
     {
       key: "receipt",
-      label: "Signed receipt",
-      what: "aggregates + opened leaves + evidence hash, Ed25519",
+      label: "Receipt digest",
+      what: "sha256 of the signed payload: aggregates, returned records with proofs, nonce, evidence hash",
       value: record?.receipt.digest,
       verified: p ? passed("receipt-signature") : undefined
     },
     {
       key: "chain",
-      label: "Solana commitment",
-      what: "immutable account, decoded and compared on audit",
+      label: "Solana account",
+      what: "digest, root, hashes and leaf count written to a program account; read back during audit",
       value: record?.solanaCommitment?.commitmentPda,
       verified: record?.solanaCommitment?.status === "confirmed" ? passed("chain-results-root") : undefined
     }

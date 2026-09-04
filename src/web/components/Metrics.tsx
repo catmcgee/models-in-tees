@@ -26,11 +26,11 @@ export function MetricsView({
 
 const EXPLAIN: Partial<Record<ExperimentKind, string>> = {
   "expected-token":
-    "Top-1 accuracy is how often the expected token was the model's first prediction; top-5 means it was within the first five. Median rank says how far down the right answer usually sits. Every value is an integer function of the committed per-item leaves.",
+    "Top-1 accuracy: fraction of items where the expected token had the highest next-token probability. Top-5: fraction where it was within the five highest. Median target rank: median position of the expected token in the sorted next-token distribution. Mean target prob: mean next-token probability of the expected token. Each value is computed from the per-item records with integer arithmetic.",
   memorization:
-    "Verbatim rate is the fraction of passages the model completed token-for-token under greedy decoding, which is evidence those passages were in its training data.",
+    "Verbatim rate: fraction of passages where greedy decoding from the prefix reproduced the continuation token for token. Mean matched fraction: mean share of continuation tokens matched before the first mismatch.",
   "paired-bias":
-    "The signed gap is mean P(target | prompt A) minus P(target | prompt B), in basis points. A positive gap with target ' he' means prompt A's subjects pull the model toward a male pronoun more than prompt B's."
+    "Signed gap: mean of P(target | prompt A) minus P(target | prompt B), in basis points (1/100 of a percent). Absolute gap: mean of the absolute differences. Favoring A: number of pairs where the gap is positive. The target token here is ' he'."
 };
 
 function scalarEntries(metrics: Metrics): Array<[string, unknown]> {
@@ -77,9 +77,10 @@ export function ProbeMetrics({ metrics }: { metrics: Metrics }) {
         ))}
       </div>
       <p className="metric-note">
-        Each bar is held-out probe accuracy on one hidden state; the tick is the majority-class baseline. The probe's
-        weight vector never leaves the runner. Only each example's predicted label per layer is committed, so the
-        accuracies are recomputable from the leaves.
+        Each bar is the held-out accuracy of a logistic-regression probe trained on that hidden state (index 0 is the
+        embedding output, the last is the final norm output). The tick marks the majority-class baseline on the held-out
+        set. The probe weights are not returned. Each item's record holds the probe's predicted label per hidden state,
+        which is what these accuracies are computed from.
       </p>
     </div>
   );
@@ -112,9 +113,10 @@ export function PatchMetrics({ metrics }: { metrics: Metrics }) {
         ))}
       </div>
       <p className="metric-note">
-        Mean recovery of the correct answer's log-probability when the clean prompt's residual stream is patched into
-        the corrupted prompt at that layer, averaged across pairs. A sharp rise over a few consecutive layers with a
-        small spread is the robust finding: that layer band causally carries the country-to-capital information.
+        For each pair, the clean prompt's final-position residual stream at one layer is copied into the corrupted
+        prompt's forward pass at that layer. Recovery is (patched log-prob minus corrupted log-prob) divided by (clean
+        log-prob minus corrupted log-prob) for the target token, clipped to [0, 1]. Bars are the mean across pairs; the
+        ± value is the standard deviation.
       </p>
     </div>
   );
@@ -136,7 +138,7 @@ export function FeatureMetrics({ metrics, descriptive }: { metrics: Metrics; des
         <Tile k="Tokens scanned" v={String(metrics.tokenCount)} />
         <Tile k="Active features / token" v={formatMetric("meanActiveFeaturesPerTokenMilli", metrics.meanActiveFeaturesPerTokenMilli)} />
         <Tile k="Prompts" v={String(metrics.promptCount)} />
-        <Tile k="Features reported" v={String(features.length)} />
+        <Tile k="Features listed" v={String(features.length)} />
       </div>
       <div className="patch-bars">
         {features.map((feature) => (
@@ -153,9 +155,9 @@ export function FeatureMetrics({ metrics, descriptive }: { metrics: Metrics; des
         ))}
       </div>
       <p className="metric-note">
-        Firing rate is the fraction of scanned tokens on which a Gemma Scope 2 dictionary feature activated. Labels are
-        the top activating tokens observed in this run; they are descriptive context and are not part of the signed
-        material.
+        Firing rate: fraction of the scanned tokens (excluding the BOS token) on which the Gemma Scope 2 feature had a
+        non-zero activation. The label lists the tokens on which the feature activated most strongly in this run. Labels
+        are not part of the signed payload.
       </p>
     </div>
   );
@@ -166,13 +168,13 @@ export function PolicyChips({ policy }: { policy: Record<string, unknown> }) {
     ["Strategy", String(policy.strategy)],
     ["Disclosed items", `${policy.disclosedItemPercent}% (min ${policy.minDisclosedItems}, max ${policy.maxDisclosedItems})`],
     ["Merkle scheme", String(policy.merkleScheme)],
-    ["Per-item results", policy.perItemResultsSealed ? "sealed, committed" : "returned"],
-    ["Probe weights", policy.probeWeightsReturned ? "returned" : "sealed"],
-    ["Raw activations", policy.rawActivationsReturned ? "returned" : "sealed"]
+    ["Per-item records", policy.perItemResultsSealed ? "only the seeded sample is returned" : "all returned"],
+    ["Probe weights", policy.probeWeightsReturned ? "returned" : "not returned"],
+    ["Raw activations", policy.rawActivationsReturned ? "returned" : "not returned; digests only"]
   ];
   return (
     <div className="policy-block">
-      <div className="ev-col-title">Leakage policy enforced inside the runner</div>
+      <div className="ev-col-title">Leakage policy</div>
       <div className="policy-tags">
         {entries.map(([key, value]) => (
           <span key={key}>
@@ -181,9 +183,9 @@ export function PolicyChips({ policy }: { policy: Record<string, unknown> }) {
         ))}
       </div>
       <p className="metric-note">
-        Numbers are fixed-point integers at declared scales, top-k is capped, and only a seeded sample of per-item
-        results is opened. The policy's hash is inside the signed receipt, so an auditor can prove which caps governed
-        this run.
+        The runner applies these limits before anything leaves it: values are rounded to fixed-point integers at the
+        scales above, at most three top tokens are ever reported, and only the seeded sample of per-item records is
+        returned. The policy object is hashed into the receipt.
       </p>
     </div>
   );

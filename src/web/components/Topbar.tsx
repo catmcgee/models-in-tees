@@ -30,7 +30,7 @@ export function Topbar({
           <SealedCube />
         </div>
         <div>
-          <div className="brand-title">Committed Experiments over a Sealed Model</div>
+          <div className="brand-title">Experiments on an unpublished model</div>
           <div className="brand-sub">{subtitle}</div>
         </div>
       </div>

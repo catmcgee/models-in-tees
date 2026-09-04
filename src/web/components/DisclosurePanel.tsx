@@ -27,24 +27,23 @@ export function DisclosurePanel({
     <section className="panel disclosure">
       <div className="panel-head">
         <div>
-          <span className="eyebrow">Partial reveal</span>
+          <span className="eyebrow">Per-item records</span>
           <div className="panel-title">
-            {disclosure.count} of {leafCount} per-item results opened
+            {disclosure.count} of {leafCount} records returned
           </div>
         </div>
         <span className="pill-count">root {shortHash(resultsRoot, 8)}</span>
       </div>
       <p className="metric-note">
-        Every item produced a leaf. All {leafCount} leaves are committed under the Merkle root above, which is
-        inside the signed receipt and the attestation nonce. The sample below is forced by a seed derived from the
-        root, the dataset hash and the model commitment, so the operator cannot choose which items to show. The
-        remaining {leafCount - disclosure.count} stay sealed but provably committed. Each leaf also carries digests of
-        the residual-stream activations it was computed from, so the derived numbers are pinned to specific internal
-        states of the sealed model.
+        Each input item produced one record. All {leafCount} records are leaves of the Merkle tree whose root is
+        above. Which records are returned is decided by a seed computed from the root, the dataset hash and the model
+        commitment; the same run always returns the same records. The other {leafCount - disclosure.count} records
+        are stored on the VM and not returned. Every record includes one digest per hidden state of the residual-stream
+        vector the result was computed from; the vectors themselves are not returned.
       </p>
       <div className="check-inline">
-        <StatusMark status={seedStatus} /> seed recomputed from committed material
-        <StatusMark status={indicesStatus} /> indices [{disclosure.indices.join(", ")}] match the seed
+        <StatusMark status={seedStatus} /> seed recomputed from root, dataset hash and model commitment
+        <StatusMark status={indicesStatus} /> returned indices [{disclosure.indices.join(", ")}] match the seed
       </div>
       <div className="disclosure-table">
         {disclosure.leaves.map((leaf) => (
@@ -81,8 +80,8 @@ function LeafRow({
         <span className="leaf-index">#{leaf.index}</span>
         <span className="leaf-preview">{preview || `item ${leaf.index}`}</span>
         <span className="leaf-status">
-          <StatusMark status={hashStatus} /> leaf hash
-          <StatusMark status={proofStatus} /> proof → root
+          <StatusMark status={hashStatus} /> record hash
+          <StatusMark status={proofStatus} /> inclusion proof
         </span>
         <span className="drawer-caret">
           <ChevronDown />
@@ -99,7 +98,7 @@ function LeafRow({
             ))}
             {digestFields.map(([key, value]) => (
               <div className="kv-row" key={key}>
-                <div className="kv-k">{key} (sealed internals)</div>
+                <div className="kv-k">{key} (one per hidden state)</div>
                 <div className="kv-v digest-list">
                   {Array.isArray(value)
                     ? value.map((d, i) => <span key={i} title={`hidden state ${i}`}>{String(d).slice(0, 10)}</span>)
@@ -108,11 +107,11 @@ function LeafRow({
               </div>
             ))}
             <div className="kv-row">
-              <div className="kv-k">leaf hash</div>
+              <div className="kv-k">record hash (Merkle leaf)</div>
               <div className="kv-v">{leaf.leafHash}</div>
             </div>
           </div>
-          <div className="ev-col-title">Inclusion proof ({leaf.proof.length} steps, leaf → root)</div>
+          <div className="ev-col-title">Inclusion proof ({leaf.proof.length} sibling hashes, leaf to root)</div>
           <ol className="proof-steps">
             {leaf.proof.map((step, index) => (
               <li key={index}>
