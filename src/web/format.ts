@@ -68,7 +68,7 @@ export function modelDisplayName(modelId?: string | null): string {
   const tail = modelId.split("/").pop() || modelId;
   return tail
     .replace(/[-_]+/g, " ")
-    .replace(/\bpt\b/i, "(pretrained)")
+    .replace(/\s*\bpt\b/i, "")
     .replace(/\b\w/g, (c) => c.toUpperCase())
     .replace(/(\d)b\b/g, "$1B");
 }

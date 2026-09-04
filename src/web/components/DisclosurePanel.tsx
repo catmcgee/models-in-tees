@@ -42,8 +42,8 @@ export function DisclosurePanel({
         vector the result was computed from; the vectors themselves are not returned.
       </p>
       <div className="check-inline">
-        <StatusMark status={seedStatus} /> seed recomputed from root, dataset hash and model commitment
-        <StatusMark status={indicesStatus} /> returned indices [{disclosure.indices.join(", ")}] match the seed
+        <span><StatusMark status={seedStatus} /> seed recomputed from root, dataset hash and model commitment</span>
+        <span><StatusMark status={indicesStatus} /> returned indices [{disclosure.indices.join(", ")}] match the seed</span>
       </div>
       <div className="disclosure-table">
         {disclosure.leaves.map((leaf) => (

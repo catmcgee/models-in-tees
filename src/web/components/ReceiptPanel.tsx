@@ -54,14 +54,17 @@ export function ReceiptPanel({
         </ul>
       </div>
 
-      <div className="kv receipt-kv">
+      <div className="hash-block">
         <Row k="Receipt digest" v={record.receipt.digest} />
         <Row k="Results Merkle root" v={payload.results.resultsRoot} />
         <Row k="Attestation nonce" v={payload.attestation.nonce} />
         <Row k="TEE evidence hash" v={payload.attestation.teeEvidenceHash} />
         <Row k="Workload hash" v={payload.attestation.workloadHash || "n/a"} />
         <Row k="Signer key fingerprint" v={payload.runner.publicKeyFingerprint} />
-        <Row k="Issued" v={`${formatDate(payload.issuedAt)}, ${formatMs(payload.runner.latencyMs)} from request to signature`} />
+      </div>
+      <div className="receipt-foot">
+        <span><strong>Issued</strong> {formatDate(payload.issuedAt)}</span>
+        <span>{formatMs(payload.runner.latencyMs)} from request to signature</span>
       </div>
 
       <div className="check-groups">

@@ -4,6 +4,7 @@ import type { PublicExperimentRecord } from "../types.js";
 
 interface Link {
   key: string;
+  color: "green" | "blue" | "violet" | "red" | "amber";
   label: string;
   what: string;
   value?: string;
@@ -32,6 +33,7 @@ export function BindingChain({
   const links: Link[] = [
     {
       key: "weights",
+      color: "green",
       label: "Model commitment",
       what: weightFiles ? `sha256 over the ${weightFiles} model files (weights, config, tokenizer)` : "sha256 over the model files (weights, config, tokenizer)",
       value: p?.model.commitment ?? modelCommitment ?? undefined,
@@ -39,6 +41,7 @@ export function BindingChain({
     },
     {
       key: "registry",
+      color: "green",
       label: "Dataset hash",
       what: "sha256 over the experiment's input items as they appear in the repository",
       value: p?.experiment.datasetHash ?? registryHash ?? undefined,
@@ -46,6 +49,7 @@ export function BindingChain({
     },
     {
       key: "internals",
+      color: "blue",
       label: "Residual-stream digests",
       what: p
         ? `${p.results.leafCount} items × ${String(p.model.architecture.hiddenStateCount ?? 27)} hidden states, one sha256 each, stored inside the item's record`
@@ -55,6 +59,7 @@ export function BindingChain({
     },
     {
       key: "root",
+      color: "violet",
       label: "Merkle root",
       what: "RFC 6962 tree over all item records; returned items come with inclusion proofs",
       value: p?.results.resultsRoot,
@@ -62,6 +67,7 @@ export function BindingChain({
     },
     {
       key: "nonce",
+      color: "red",
       label: "Attestation nonce",
       what: "sha256 of root, dataset hash, registry hash, model commitment, policy hash and signer key; passed to the VM's attestation token",
       value: p?.attestation.nonce,
@@ -69,6 +75,7 @@ export function BindingChain({
     },
     {
       key: "receipt",
+      color: "amber",
       label: "Receipt digest",
       what: "sha256 of the signed payload: aggregates, returned records with proofs, nonce, evidence hash",
       value: record?.receipt.digest,
@@ -76,6 +83,7 @@ export function BindingChain({
     },
     {
       key: "chain",
+      color: "green",
       label: "Solana account",
       what: "digest, root, hashes and leaf count written to a program account; read back during audit",
       value: record?.solanaCommitment?.commitmentPda,
@@ -86,14 +94,19 @@ export function BindingChain({
   return (
     <ol className="chain" data-live={Boolean(p)}>
       {links.map((link) => (
-        <li className="chain-link" key={link.key} data-state={link.value ? (link.verified === false ? "fail" : link.verified ? "ok" : "set") : "empty"}>
+        <li
+          className="chain-link"
+          key={link.key}
+          data-color={link.color}
+          data-state={link.value ? (link.verified === false ? "fail" : link.verified ? "ok" : "set") : "empty"}
+        >
           <span className="chain-node">
             {link.verified ? <CheckCircle2 /> : <span className="chain-dot" />}
           </span>
           <div className="chain-body">
             <div className="chain-label">{link.label}</div>
             <div className="chain-what">{link.what}</div>
-            {link.value && <div className="chain-value">{link.value.length > 40 ? shortHash(link.value, 12) : link.value}</div>}
+            <div className="chain-value">{link.value ? (link.value.length > 40 ? shortHash(link.value, 12) : link.value) : "pending"}</div>
           </div>
         </li>
       ))}

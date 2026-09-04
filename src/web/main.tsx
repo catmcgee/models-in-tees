@@ -193,6 +193,11 @@ function App() {
             sample is returned; the other records stay on the VM. This page recomputes each hash from the returned data
             rather than trusting the API's own verdict.
           </p>
+          <div className="hero-chips">
+            <span className="chip chip-mint">{experiments.length || 6} experiments</span>
+            <span className="chip chip-violet">{evidence?.hardwareModel || teeName}</span>
+            <span className="chip chip-blue">{activeRecord?.solanaCommitment?.status === "confirmed" ? "on Solana devnet" : "Solana devnet"}</span>
+          </div>
           {error && <div className="error-strip">{error}</div>}
           {health && health.runner.state !== "ready" && (
             <div className="running-line">
@@ -203,7 +208,8 @@ function App() {
         </div>
         <div className="hero-chain">
           <div className="chain-title">
-            {activeRecord ? `Hashes in run ${shortRun(activeRecord.id)}` : "Hashes produced by a run"}
+            <span>Hashes produced by a run</span>
+            <span>{activeRecord ? `run ${shortRun(activeRecord.id)}` : "no run selected"}</span>
           </div>
           <BindingChain
             record={activeRecord}
