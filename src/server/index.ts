@@ -9,10 +9,10 @@ import { verifyExperimentRecord } from "../shared/verify.js";
 import { readExperimentCommitment } from "./anchorCommit.js";
 import { auditReceiptEvidence } from "./audit.js";
 import { config, rootDir } from "./config.js";
-import { getExperiment, loadRegistry, toDetail, toSummary } from "./experiments.js";
+import { cachedRegistry, getExperiment, loadModelInfo, loadRegistry, primeCaches, toDetail, toSummary } from "./experiments.js";
 import { CanonicalMismatchError, createSignedExperimentReceipt, getRunnerKey } from "./receipts.js";
 import { currentRun, tryAcquire } from "./runLock.js";
-import { getModelInfo, getRunner, runExperiment, RunnerRequestError, warmRunner } from "./runnerClient.js";
+import { getRunner, runExperiment, RunnerRequestError, warmRunner } from "./runnerClient.js";
 import { commitReceiptToDevnet, getSolanaStatus } from "./solana.js";
 import {
   getRecord,
@@ -38,13 +38,10 @@ export function createApp(): express.Express {
       hash: null,
       experimentCount: 0
     };
-    if (runner.state === "ready") {
-      try {
-        const loaded = await loadRegistry();
-        registry = { ok: true, hash: loaded.registryHash, experimentCount: loaded.experiments.length };
-      } catch {
-        registry = { ok: false, hash: null, experimentCount: 0 };
-      }
+    // Never wait on the worker here: a run may be in flight and the worker is serial.
+    const loaded = cachedRegistry();
+    if (loaded) {
+      registry = { ok: true, hash: loaded.registryHash, experimentCount: loaded.experiments.length };
     }
     res.json({
       ok: true,
@@ -67,7 +64,7 @@ export function createApp(): express.Express {
 
   app.get("/api/model", async (_req, res) => {
     try {
-      res.json({ ok: true, model: await getModelInfo() });
+      res.json({ ok: true, model: await loadModelInfo() });
     } catch (error) {
       sendError(res, error);
     }
@@ -401,8 +398,10 @@ if (isDirectRun) {
     console.log(`[api] ${config.serviceName} listening on http://127.0.0.1:${config.apiPort} (${config.teeMode})`);
   });
   warmRunner()
-    .then((ready) => {
+    .then(async (ready) => {
       console.log(`[api] runner ready: model ${ready.model.commitment.slice(0, 16)}… registry ${ready.registryHash.slice(0, 16)}… in ${ready.loadMs} ms`);
+      await primeCaches();
+      console.log("[api] registry and model info cached");
     })
     .catch((error) => {
       console.error(`[api] runner failed to start: ${error instanceof Error ? error.message : String(error)}`);

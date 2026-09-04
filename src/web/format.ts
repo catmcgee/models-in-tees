@@ -70,7 +70,7 @@ export function modelDisplayName(modelId?: string | null): string {
     .replace(/[-_]+/g, " ")
     .replace(/\bpt\b/i, "(pretrained)")
     .replace(/\b\w/g, (c) => c.toUpperCase())
-    .replace(/(\d)B\b/g, "$1B");
+    .replace(/(\d)b\b/g, "$1B");
 }
 
 export function teeRuntimeName(evidence?: TeeEvidenceSummary | null, teeMode?: string): string {

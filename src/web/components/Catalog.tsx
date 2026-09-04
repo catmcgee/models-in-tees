@@ -33,6 +33,7 @@ export function Catalog({
               key={experiment.id}
               type="button"
               className="exp-card"
+              data-kind={experiment.kind}
               data-active={selectedId === experiment.id}
               onClick={() => onSelect(experiment.id)}
             >
@@ -46,7 +47,7 @@ export function Catalog({
               <div className="exp-desc">{experiment.description}</div>
               <div className="exp-meta">
                 <span>dataset {shortHash(experiment.datasetHash, 6)}</span>
-                <span>{last ? `last run ${new Date(last.createdAt).toLocaleDateString()}` : "not run yet"}</span>
+                <span data-ran={Boolean(last)}>{last ? `ran ${new Date(last.createdAt).toLocaleDateString()}` : "not run yet"}</span>
               </div>
             </button>
           );

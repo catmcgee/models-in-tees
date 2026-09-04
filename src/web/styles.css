@@ -1240,3 +1240,63 @@ input[type="range"].rng::-moz-range-thumb {
 .check-detail { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); white-space: nowrap; }
 .chain-readback { margin-top: 16px; padding: 14px 16px; background: var(--surface-2); border-radius: var(--r-md); }
 .chain-readback .kv { margin-top: 8px; gap: 9px; }
+
+/* ============================================================
+   Hero with binding chain (signature element)
+   ============================================================ */
+.hero { display: grid; grid-template-columns: minmax(0, 7fr) minmax(300px, 5fr); gap: clamp(20px, 3vw, 44px); align-items: start; }
+@media (max-width: 920px) { .hero { grid-template-columns: 1fr; } }
+.hero .headline { font-size: clamp(30px, 3.6vw, 46px); }
+.hero .lede { font-size: 15px; }
+.hero-chain {
+  background: linear-gradient(180deg, var(--surface-2), oklch(0.97 0.012 193));
+  border-radius: var(--r-lg); padding: 18px 18px 14px; box-shadow: var(--sh-inset);
+}
+.chain-title { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent-ink); margin-bottom: 10px; }
+.chain { list-style: none; margin: 0; padding: 0; display: grid; }
+.chain-link { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 12px; position: relative; padding-bottom: 12px; }
+.chain-link:last-child { padding-bottom: 0; }
+.chain-link::before {
+  content: ""; position: absolute; left: 10px; top: 20px; bottom: -2px; width: 2px;
+  background: var(--hair);
+}
+.chain-link:last-child::before { display: none; }
+.chain[data-live="true"] .chain-link[data-state="ok"]::before,
+.chain[data-live="true"] .chain-link[data-state="set"]::before { background: var(--accent); }
+.chain-node { width: 22px; height: 22px; display: grid; place-items: center; z-index: 1; }
+.chain-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--faint); box-shadow: 0 0 0 4px var(--surface-2); }
+.chain-link[data-state="set"] .chain-dot { background: var(--accent); box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent) 22%, transparent); }
+.chain-link[data-state="fail"] .chain-dot { background: var(--block); }
+.chain-node svg { width: 20px; height: 20px; color: var(--approve); background: var(--surface-2); border-radius: 50%; }
+.chain-label { font-family: var(--font-display); font-weight: 600; font-size: 14.5px; letter-spacing: -0.005em; line-height: 1.2; }
+.chain-what { font-size: 12px; color: var(--muted); line-height: 1.4; margin-top: 2px; }
+.chain-value { font-family: var(--font-mono); font-size: 11px; color: var(--accent-ink); margin-top: 3px; word-break: break-all; }
+.chain-link[data-state="empty"] .chain-label { color: var(--ink-soft); }
+
+/* catalog cards: kind rail */
+.exp-card { position: relative; padding-left: 22px; overflow: hidden; }
+.exp-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--hair); }
+.exp-card[data-kind="expected-token"]::before, .exp-card[data-kind="memorization"]::before, .exp-card[data-kind="paired-bias"]::before { background: var(--approve); }
+.exp-card[data-kind="linear-probe"]::before { background: var(--review); }
+.exp-card[data-kind="activation-patching"]::before { background: var(--insuff); }
+.exp-card[data-kind="sae-features"]::before { background: var(--accent); }
+.exp-meta [data-ran="true"] { color: var(--approve); }
+
+/* receipt: commitment ladder */
+.commits { margin: 4px 0 18px; }
+.commit-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.commit-list li { font-size: 13px; color: var(--ink-soft); line-height: 1.45; padding-left: 14px; position: relative; }
+.commit-list li::before { content: ""; position: absolute; left: 0; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.commit-list strong { color: var(--ink); font-weight: 600; }
+.digest-list { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.digest-list span { color: var(--muted); }
+
+/* motion: quiet, respects reduced motion */
+@media (prefers-reduced-motion: no-preference) {
+  .chain-link { animation: chain-in 0.35s ease both; }
+  .chain-link:nth-child(2) { animation-delay: 0.05s; } .chain-link:nth-child(3) { animation-delay: 0.1s; }
+  .chain-link:nth-child(4) { animation-delay: 0.15s; } .chain-link:nth-child(5) { animation-delay: 0.2s; }
+  .chain-link:nth-child(6) { animation-delay: 0.25s; } .chain-link:nth-child(7) { animation-delay: 0.3s; }
+  @keyframes chain-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+}
+button:focus-visible, .exp-card:focus-visible, .leaf-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

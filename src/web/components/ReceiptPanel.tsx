@@ -43,6 +43,17 @@ export function ReceiptPanel({
         <Badge state={state} count={merged.length} failing={failing.length} />
       </div>
 
+      <div className="commits">
+        <div className="ev-col-title">What the signature covers</div>
+        <ul className="commit-list">
+          <li><strong>Weights</strong> by file hashes (commitment {shortHash(payload.model.commitment, 8)}); the files themselves stay sealed.</li>
+          <li><strong>Internals</strong>: every leaf carries one digest per hidden-state index of the final-token residual stream it was scored from{payload.sae ? ", plus the full SAE activation tensor" : ""}. Sealed, but fixed under the root.</li>
+          <li><strong>Per-item results</strong>: {payload.results.leafCount} leaves under root {shortHash(payload.results.resultsRoot, 8)}; {payload.disclosure.count} opened with proofs.</li>
+          <li><strong>Aggregates</strong>, policy, dataset and registry hashes, inline in the signed payload.</li>
+          <li><strong>Attestation</strong>: nonce derived from all of the above, echoed by the TEE token, evidence hash bound.</li>
+        </ul>
+      </div>
+
       <div className="kv receipt-kv">
         <Row k="Receipt digest" v={record.receipt.digest} />
         <Row k="Results Merkle root" v={payload.results.resultsRoot} />

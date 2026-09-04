@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Tuple
 import torch
 
 from ..canonical import SCORE_SCALE, div_round
-from .common import RunContext, base_leaf, check_item_keys, check_prompt_length, require_str
+from .common import RunContext, base_leaf, check_item_keys, check_prompt_length, require_str, residual_digests
 
 LEAF_SCHEMA = "tee-ai-leaf/linear-probe/v1"
 
@@ -87,6 +87,7 @@ def run(ctx: RunContext, experiment: Dict[str, Any]) -> Tuple[List[Dict[str, Any
                 "label": labels[index],
                 "split": split[index],
                 "predictionsByLayer": [int(v) for v in predictions[index].tolist()],
+                "residualDigests": residual_digests(features[index]),
             }
         )
         leaves.append(leaf)

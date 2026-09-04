@@ -159,7 +159,12 @@ class LLM:
 
     def hidden_last_batch(self, seqs: List[List[int]]) -> List[torch.Tensor]:
         """[hiddenStateCount, d_model] final-position hidden states per sequence."""
-        out: List[Optional[torch.Tensor]] = [None] * len(seqs)
+        return self.logits_and_hidden_batch(seqs)[1]
+
+    def logits_and_hidden_batch(self, seqs: List[List[int]]) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
+        """Final-position logits and [hiddenStateCount, d_model] hidden states per sequence."""
+        logits_out: List[Optional[torch.Tensor]] = [None] * len(seqs)
+        hidden_out: List[Optional[torch.Tensor]] = [None] * len(seqs)
         with torch.no_grad():
             for _, indices in self._group_by_length(seqs).items():
                 input_ids = torch.tensor([seqs[i] for i in indices], dtype=torch.long)
@@ -169,10 +174,12 @@ class LLM:
                     output_hidden_states=True,
                     logits_to_keep=1,
                 )
+                logits = result.logits[:, -1, :].float()
                 stacked = torch.stack([h[:, -1, :] for h in result.hidden_states], dim=1).float()
                 for row, index in enumerate(indices):
-                    out[index] = stacked[row].clone()
-        return [t for t in out if t is not None]
+                    logits_out[index] = logits[row].clone()
+                    hidden_out[index] = stacked[row].clone()
+        return [t for t in logits_out if t is not None], [t for t in hidden_out if t is not None]
 
     def hidden_states_single(self, seq: List[int]) -> Tuple[torch.Tensor, ...]:
         """All-position hidden states for one sequence (tuple of [1, T, d])."""

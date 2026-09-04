@@ -27,6 +27,8 @@ LEAKAGE_POLICY = {
     "minDisclosedItems": 3,
     "maxDisclosedItems": 8,
     "perItemResultsSealed": True,
+    "residualDigestsPerItem": True,
+    "residualDigestScheme": "sha256(float32-le final-token hidden state) per hidden-state index",
     "probeWeightsReturned": False,
     "rawActivationsReturned": False,
     "rawAttentionReturned": False,

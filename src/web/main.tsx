@@ -7,6 +7,7 @@ import { EvidenceDrawer } from "./components/EvidenceDrawer.js";
 import { ExperimentPanel } from "./components/ExperimentPanel.js";
 import { MetricsView, PolicyChips } from "./components/Metrics.js";
 import { ReceiptPanel } from "./components/ReceiptPanel.js";
+import { BindingChain } from "./components/BindingChain.js";
 import { Topbar } from "./components/Topbar.js";
 import { kindLabel, modelDisplayName, teeRuntimeName } from "./format.js";
 import "./styles.css";
@@ -25,7 +26,12 @@ interface ModelInfoLite {
   modelId: string;
   commitment: string;
   architecture: Record<string, unknown>;
+  files?: Array<{ path: string; sizeBytes: number; sha256: string }>;
   sae: { repoId: string; subfolder: string; commitment: string; width: number; layer: number } | null;
+}
+
+function shortRun(id: string): string {
+  return id.split("-").slice(-1)[0];
 }
 
 function App() {
@@ -167,29 +173,44 @@ function App() {
     <div className="app">
       <Topbar
         health={health}
-        subtitle={`${modelName} sealed in ${teeName} · Merkle-committed results · Solana devnet commitments`}
+        subtitle={`${modelName} inside ${teeName} · every result Merkle-committed and attested · Solana devnet`}
         busy={refreshing}
         onRefresh={() => void refresh()}
       />
 
-      <section className="panel hero-wide">
-        <span className="eyebrow">Pre-committed experiments</span>
-        <h1 className="headline">
-          Run a <span className="accentword">committed experiment</span> against a sealed model, and verify every result yourself.
-        </h1>
-        <p className="lede">
-          The experiments below are fixed in a public registry that is part of the measured workload. The model
-          weights never leave the {teeName}. Each run commits every per-item result to a Merkle root, binds that root
-          into the hardware attestation nonce, signs the aggregates and a seeded sample of opened items, and can be
-          written to a Solana program that anyone can read back. Your browser recomputes every hash on this page.
-        </p>
-        {error && <div className="error-strip">{error}</div>}
-        {health && health.runner.state !== "ready" && (
-          <div className="running-line">
-            Runner is {health.runner.state}
-            {health.runner.lastError ? `: ${health.runner.lastError}` : " (loading the sealed model)…"}
+      <section className="panel hero">
+        <div className="hero-copy">
+          <span className="eyebrow">Pre-committed experiments · sealed model</span>
+          <h1 className="headline">
+            Nobody types a prompt. Nobody sees the weights. <span className="accentword">Everyone can check the numbers.</span>
+          </h1>
+          <p className="lede">
+            Six experiments are fixed in a public registry and run inside a Confidential VM against {modelName}. A run
+            commits every per-item result, and the internal activations it came from, to one Merkle root; that root is
+            fed into the hardware attestation and signed together with the aggregates and a seeded sample of opened
+            items. The chain on the right fills with real hashes as soon as a run exists, and your browser recomputes
+            all of it.
+          </p>
+          {error && <div className="error-strip">{error}</div>}
+          {health && health.runner.state !== "ready" && (
+            <div className="running-line">
+              Runner is {health.runner.state}
+              {health.runner.lastError ? `: ${health.runner.lastError}` : ", loading the sealed model…"}
+            </div>
+          )}
+        </div>
+        <div className="hero-chain">
+          <div className="chain-title">
+            {activeRecord ? `Binding chain for run ${shortRun(activeRecord.id)}` : "What one run binds together"}
           </div>
-        )}
+          <BindingChain
+            record={activeRecord}
+            registryHash={registryHash}
+            modelCommitment={model?.commitment ?? health?.model?.commitment ?? null}
+            weightFiles={model?.files?.length ?? null}
+            checks={bundle.client?.checks}
+          />
+        </div>
       </section>
 
       <div className="lab-grid">
@@ -258,8 +279,8 @@ function App() {
       />
 
       <div className="foot">
-        {modelName} weights stay sealed · every result is Merkle-committed and attested inside {teeName} · commitments
-        are readable on Solana devnet
+        {modelName} stays sealed inside {teeName} · results and internals are committed, opened by seed, and readable on
+        Solana devnet
       </div>
     </div>
   );

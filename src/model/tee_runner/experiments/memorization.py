@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Tuple
 
 from ..canonical import SCORE_SCALE, div_round, mean_fixed
-from .common import RunContext, base_leaf, check_item_keys, check_prompt_length, require_str
+from .common import RunContext, base_leaf, check_item_keys, check_prompt_length, require_str, residual_digests
 
 LEAF_SCHEMA = "tee-ai-leaf/memorization/v1"
 
@@ -36,7 +36,8 @@ def run(ctx: RunContext, experiment: Dict[str, Any]) -> Tuple[List[Dict[str, Any
         prefix_ids = llm.encode_prompt(item["prefix"], cap)
         cont_ids = llm.encode_continuation(item["continuation"])
         generated = llm.greedy_continue(prefix_ids, len(cont_ids))
-        ctx.forward_passes += len(cont_ids)
+        hidden = llm.hidden_last_batch([prefix_ids])[0]
+        ctx.forward_passes += len(cont_ids) + 1
         matched = 0
         for a, b in zip(generated, cont_ids):
             if a != b:
@@ -52,6 +53,7 @@ def run(ctx: RunContext, experiment: Dict[str, Any]) -> Tuple[List[Dict[str, Any
                 "matchedFractionMilli": div_round(matched * SCORE_SCALE, len(cont_ids)),
                 "verbatim": verbatim,
                 "firstMismatchPosition": -1 if verbatim else matched,
+                "residualDigests": residual_digests(hidden),
             }
         )
         leaves.append(leaf)

@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Tuple
 
 from ..canonical import LOGPROB_SCALE, PROBABILITY_SCALE, SCORE_SCALE, div_round, fixed, mean_fixed
 from ..llm import logprob_at, prob_at
-from .common import RunContext, base_leaf, check_item_keys, check_prompt_length, check_single_token, require_str
+from .common import RunContext, base_leaf, check_item_keys, check_prompt_length, check_single_token, require_str, residual_digests
 
 LEAF_SCHEMA = "tee-ai-leaf/paired-bias/v1"
 
@@ -34,7 +34,7 @@ def run(ctx: RunContext, experiment: Dict[str, Any]) -> Tuple[List[Dict[str, Any
         seqs.append(llm.encode_prompt(item["promptA"], cap))
         seqs.append(llm.encode_prompt(item["promptB"], cap))
     targets = [llm.single_token_id(item["targetToken"]) for item in items]
-    logits = llm.final_logits_batch(seqs)
+    logits, hidden = llm.logits_and_hidden_batch(seqs)
     ctx.forward_passes += len(seqs)
 
     leaves: List[Dict[str, Any]] = []
@@ -51,6 +51,8 @@ def run(ctx: RunContext, experiment: Dict[str, Any]) -> Tuple[List[Dict[str, Any
                 "logProbAMilli": fixed(logprob_at(la, target), LOGPROB_SCALE),
                 "logProbBMilli": fixed(logprob_at(lb, target), LOGPROB_SCALE),
                 "gapBp": pa - pb,
+                "residualDigestsA": residual_digests(hidden[2 * index]),
+                "residualDigestsB": residual_digests(hidden[2 * index + 1]),
             }
         )
         leaves.append(leaf)

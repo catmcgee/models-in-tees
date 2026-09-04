@@ -14,7 +14,7 @@ import torch
 
 from ..canonical import LOGPROB_SCALE, SCORE_SCALE, div_round, fixed, isqrt, mean_fixed
 from ..llm import logprob_at
-from .common import RunContext, base_leaf, check_item_keys, check_prompt_length, check_single_token, require_str
+from .common import RunContext, base_leaf, check_item_keys, check_prompt_length, check_single_token, require_str, residual_digests
 
 LEAF_SCHEMA = "tee-ai-leaf/activation-patching/v1"
 SCORABLE_EPSILON = 1e-4
@@ -119,10 +119,13 @@ def run(ctx: RunContext, experiment: Dict[str, Any]) -> Tuple[List[Dict[str, Any
         corrupted_ids = llm.encode_prompt(item["corruptedPrompt"], cap)
         target = llm.single_token_id(item["targetToken"])
         scores = _patch_pair(llm, clean_ids, corrupted_ids, target)
-        ctx.forward_passes += 3
+        clean_hidden, corrupted_hidden = llm.hidden_last_batch([clean_ids, corrupted_ids])
+        ctx.forward_passes += 5
         leaf = base_leaf(LEAF_SCHEMA, index, item)
         leaf["targetTokenId"] = target
         leaf.update(scores)
+        leaf["residualDigestsClean"] = residual_digests(clean_hidden)
+        leaf["residualDigestsCorrupted"] = residual_digests(corrupted_hidden)
         leaves.append(leaf)
         tokens[str(index)] = {"target": llm.decode_token(target)}
     return leaves, {"itemTokens": tokens}

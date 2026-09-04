@@ -12,7 +12,7 @@ import torch
 
 from ..canonical import ACTIVATION_SCALE, SCORE_SCALE, div_round, fixed
 from ..policy import LEAKAGE_POLICY
-from .common import RunContext, base_leaf, check_item_keys, check_prompt_length, require_str
+from .common import RunContext, base_leaf, check_item_keys, check_prompt_length, require_str, residual_digests, tensor_digest
 
 LEAF_SCHEMA = "tee-ai-leaf/sae-features/v1"
 
@@ -44,7 +44,9 @@ def run(ctx: RunContext, experiment: Dict[str, Any]) -> Tuple[List[Dict[str, Any
     label_pool: Dict[int, List[Tuple[float, str]]] = {}
     for index, item in enumerate(experiment["items"]):
         seq = llm.encode_prompt(item["prompt"], cap)
-        hidden = llm.hidden_states_single(seq)[sae.hidden_state_index][0]
+        all_hidden = llm.hidden_states_single(seq)
+        final_token = torch.stack([h[0, -1, :] for h in all_hidden])
+        hidden = all_hidden[sae.hidden_state_index][0]
         ctx.forward_passes += 1
         hidden = hidden[1:, :]  # excludeBos
         token_ids = seq[1:]
@@ -80,6 +82,8 @@ def run(ctx: RunContext, experiment: Dict[str, Any]) -> Tuple[List[Dict[str, Any
                 "activePairs": active_pairs,
                 "meanL0Milli": div_round(active_pairs * SCORE_SCALE, token_count),
                 "features": features,
+                "residualDigests": residual_digests(final_token),
+                "saeActivationsDigest": tensor_digest(acts),
             }
         )
         leaves.append(leaf)

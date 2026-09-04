@@ -1,8 +1,27 @@
 from __future__ import annotations
 
+import hashlib
 from typing import Any, Dict, List, Optional
 
+import torch
+
 from ..registry import item_hash
+
+RESIDUAL_DIGEST_SCHEME = "sha256(float32-le final-token hidden state) per hidden-state index"
+
+
+def residual_digests(hidden: torch.Tensor) -> List[str]:
+    """One SHA-256 per hidden-state index over the raw float32 final-token
+    residual vector. Commits the leaf to the exact internal activations the
+    derived values were computed from, without revealing them."""
+    out: List[str] = []
+    for row in hidden.detach().float().contiguous():
+        out.append(hashlib.sha256(row.numpy().astype("<f4").tobytes()).hexdigest())
+    return out
+
+
+def tensor_digest(value: torch.Tensor) -> str:
+    return hashlib.sha256(value.detach().float().contiguous().numpy().astype("<f4").tobytes()).hexdigest()
 
 
 class RunContext:

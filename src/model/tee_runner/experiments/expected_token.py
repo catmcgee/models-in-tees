@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Tuple
 
 from ..canonical import LOGPROB_SCALE, PROBABILITY_SCALE, SCORE_SCALE, div_round, fixed, mean_fixed
 from ..llm import argmax_id, logprob_at, prob_at, rank_of
-from .common import RunContext, base_leaf, check_item_keys, check_prompt_length, check_single_token, require_str
+from .common import RunContext, base_leaf, check_item_keys, check_prompt_length, check_single_token, require_str, residual_digests
 
 LEAF_SCHEMA = "tee-ai-leaf/expected-token/v1"
 
@@ -27,12 +27,12 @@ def run(ctx: RunContext, experiment: Dict[str, Any]) -> Tuple[List[Dict[str, Any
     cap = int(experiment["params"]["maxPromptTokens"])
     seqs = [llm.encode_prompt(item["prompt"], cap) for item in items]
     targets = [llm.single_token_id(item["expectedToken"]) for item in items]
-    logits = llm.final_logits_batch(seqs)
+    logits, hidden = llm.logits_and_hidden_batch(seqs)
     ctx.forward_passes += len(seqs)
 
     leaves: List[Dict[str, Any]] = []
     tokens: Dict[str, Dict[str, str]] = {}
-    for index, (item, seq, target, lg) in enumerate(zip(items, seqs, targets, logits)):
+    for index, (item, seq, target, lg, hs) in enumerate(zip(items, seqs, targets, logits, hidden)):
         top1 = argmax_id(lg)
         leaf = base_leaf(LEAF_SCHEMA, index, item)
         leaf.update(
@@ -44,6 +44,7 @@ def run(ctx: RunContext, experiment: Dict[str, Any]) -> Tuple[List[Dict[str, Any
                 "targetLogProbMilli": fixed(logprob_at(lg, target), LOGPROB_SCALE),
                 "top1TokenId": top1,
                 "top1Hit": top1 == target,
+                "residualDigests": residual_digests(hs),
             }
         )
         leaves.append(leaf)

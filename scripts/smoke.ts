@@ -5,6 +5,7 @@
  */
 
 import type { AddressInfo } from "node:net";
+import { primeCaches } from "../src/server/experiments.js";
 import { createApp } from "../src/server/index.js";
 import { getRunner, stopRunner, warmRunner } from "../src/server/runnerClient.js";
 import type { PublicExperimentRecord, RecordVerification } from "../src/shared/receiptTypes.js";
@@ -38,6 +39,7 @@ async function main(): Promise<void> {
   try {
     console.log("[smoke] warming runner…");
     await warmRunner();
+    await primeCaches();
     const health = await getJson<{ runner: { state: string }; registry: { ok: boolean; hash: string } }>(`${base}/api/health`);
     assert(health.runner.state === "ready", `runner state ${health.runner.state}`);
     assert(health.registry.ok, "registry not ok in health");

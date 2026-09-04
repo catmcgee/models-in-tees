@@ -35,7 +35,7 @@ export function ExperimentPanel({
     return (
       <section className="panel experiment">
         <div className="empty">
-          <div className="empty-t">Pick an experiment from the registry.</div>
+          <div className="empty-t">Loading the committed registry from the runner…</div>
         </div>
       </section>
     );

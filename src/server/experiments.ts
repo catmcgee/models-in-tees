@@ -4,10 +4,29 @@ import fs from "node:fs";
 import path from "node:path";
 import { canonicalJson, sha256HexSync } from "./canonical.js";
 import { registryDir } from "./config.js";
-import { getRegistryFromRunner } from "./runnerClient.js";
-import type { AuditCheck, ExperimentDetail, ExperimentSummary, Registry, RegistryExperiment } from "./types.js";
+import { getModelInfo, getRegistryFromRunner } from "./runnerClient.js";
+import type { AuditCheck, ExperimentDetail, ExperimentSummary, ModelInfo, Registry, RegistryExperiment } from "./types.js";
 
 let cache: { registry: Registry; loadedAt: string } | null = null;
+let modelCache: ModelInfo | null = null;
+
+/** Registry and model info are immutable for a worker's lifetime; prime them
+ *  right after the worker is ready so reads never queue behind a run. */
+export async function primeCaches(): Promise<void> {
+  await loadRegistry(true);
+  modelCache = await getModelInfo();
+}
+
+export function cachedRegistry(): Registry | null {
+  return cache?.registry ?? null;
+}
+
+export async function loadModelInfo(): Promise<ModelInfo> {
+  if (!modelCache) {
+    modelCache = await getModelInfo();
+  }
+  return modelCache;
+}
 
 export async function loadRegistry(force = false): Promise<Registry> {
   if (cache && !force) {

@@ -38,7 +38,9 @@ export function DisclosurePanel({
         Every item produced a leaf. All {leafCount} leaves are committed under the Merkle root above, which is
         inside the signed receipt and the attestation nonce. The sample below is forced by a seed derived from the
         root, the dataset hash and the model commitment, so the operator cannot choose which items to show. The
-        remaining {leafCount - disclosure.count} stay sealed but provably committed.
+        remaining {leafCount - disclosure.count} stay sealed but provably committed. Each leaf also carries digests of
+        the residual-stream activations it was computed from, so the derived numbers are pinned to specific internal
+        states of the sealed model.
       </p>
       <div className="check-inline">
         <StatusMark status={seedStatus} /> seed recomputed from committed material
@@ -71,7 +73,8 @@ function LeafRow({
   proofStatus: "pass" | "fail" | "pending";
 }) {
   const [open, setOpen] = useState(false);
-  const fields = Object.entries(leaf.leaf).filter(([key]) => !["schema", "index", "itemHash"].includes(key));
+  const fields = Object.entries(leaf.leaf).filter(([key]) => !["schema", "index", "itemHash"].includes(key) && !/[dD]igest/.test(key));
+  const digestFields = Object.entries(leaf.leaf).filter(([key]) => /[dD]igest/.test(key));
   return (
     <div className="leaf-row" data-open={open}>
       <button type="button" className="leaf-head" onClick={() => setOpen((value) => !value)}>
@@ -92,6 +95,16 @@ function LeafRow({
               <div className="kv-row" key={key}>
                 <div className="kv-k">{key}</div>
                 <div className="kv-v">{Array.isArray(value) || typeof value === "object" ? JSON.stringify(value) : String(value)}</div>
+              </div>
+            ))}
+            {digestFields.map(([key, value]) => (
+              <div className="kv-row" key={key}>
+                <div className="kv-k">{key} (sealed internals)</div>
+                <div className="kv-v digest-list">
+                  {Array.isArray(value)
+                    ? value.map((d, i) => <span key={i} title={`hidden state ${i}`}>{String(d).slice(0, 10)}</span>)
+                    : String(value)}
+                </div>
               </div>
             ))}
             <div className="kv-row">
